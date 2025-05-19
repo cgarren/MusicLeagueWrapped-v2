@@ -5,7 +5,7 @@ const Header = () => {
 	return (
 		<AppBar position="static" color="primary" elevation={0}>
 			<Toolbar>
-				<Box sx={{ display: 'flex', alignItems: 'center' }}>
+				<Box sx={{ display: 'flex', alignItems: 'center', flexGrow: 1 }}>
 					{/* Music note icon created with Unicode */}
 					<Typography
 						variant="h4"

@@ -63,7 +63,7 @@ export const loadAllData = async (season = 'season1') => {
 	}
 };
 
-// Calculate most popular competitor (most total points received)
+// Calculate most popular competitor (most total votes received)
 export const calculateMostPopular = (votes, submissions, competitors) => {
 	const pointsBySubmitter = {};
 
@@ -977,6 +977,7 @@ export const calculateEarlyVoter = (votes, competitors) => {
 	return {
 		competitor: winner?.competitor,
 		earlyVotes: winner?.earlyVotes,
+		description: "Awarded to the competitor who most frequently votes in the first 25% of votes cast in each round",
 		restOfField,
 		isTied,
 		tiedWinners: tiedWinnersNames
@@ -1054,6 +1055,7 @@ export const calculateLateVoter = (votes, competitors) => {
 	return {
 		competitor: winner?.competitor,
 		lateVotes: winner?.lateVotes,
+		description: "Awarded to the competitor who most frequently votes in the last 25% of votes cast in each round",
 		restOfField,
 		isTied,
 		tiedWinners: tiedWinnersNames
@@ -1117,11 +1119,11 @@ export const calculateCrowdPleaser = (submissions, competitors) => {
 	const restOfField = isTied
 		? competitorsWithAvgPopularity.filter(item => item.avgPopularity !== highestAvg).map(item => ({
 			name: item.competitor.Name,
-			score: `${item.avgPopularity.toFixed(1)} / 100 (${item.submissionCount} submissions)`
+			score: `${item.avgPopularity.toFixed(1)} / 100`
 		}))
 		: competitorsWithAvgPopularity.slice(1).map(item => ({
 			name: item.competitor.Name,
-			score: `${item.avgPopularity.toFixed(1)} / 100 (${item.submissionCount} submissions)`
+			score: `${item.avgPopularity.toFixed(1)} / 100`
 		}));
 
 	return {
@@ -1191,11 +1193,11 @@ export const calculateTrendSetter = (submissions, competitors) => {
 	const restOfField = isTied
 		? competitorsWithAvgPopularity.filter(item => item.avgPopularity !== lowestAvg).map(item => ({
 			name: item.competitor.Name,
-			score: `${item.avgPopularity.toFixed(1)} / 100 (${item.submissionCount} submissions)`
+			score: `${item.avgPopularity.toFixed(1)} / 100`
 		}))
 		: competitorsWithAvgPopularity.slice(1).map(item => ({
 			name: item.competitor.Name,
-			score: `${item.avgPopularity.toFixed(1)} / 100 (${item.submissionCount} submissions)`
+			score: `${item.avgPopularity.toFixed(1)} / 100`
 		}));
 
 	return {
