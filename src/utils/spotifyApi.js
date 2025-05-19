@@ -5,8 +5,9 @@ import axios from 'axios';
  */
 const getSpotifyToken = async () => {
 	try {
-		const clientId = process.env.REACT_APP_SPOTIFY_CLIENT_ID;
-		const clientSecret = process.env.REACT_APP_SPOTIFY_CLIENT_SECRET;
+		// Try to get from environment variables first
+		let clientId = process.env.NEXT_PUBLIC_SPOTIFY_CLIENT_ID || process.env.REACT_APP_SPOTIFY_CLIENT_ID;
+		let clientSecret = process.env.NEXT_PUBLIC_SPOTIFY_CLIENT_SECRET || process.env.REACT_APP_SPOTIFY_CLIENT_SECRET;
 
 		if (!clientId || !clientSecret) {
 			throw new Error('Spotify credentials not found in environment variables');
