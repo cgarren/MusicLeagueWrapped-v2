@@ -30,7 +30,7 @@ The dashboard calculates and displays the following "superlatives":
 
 1. Clone the repository:
    ```
-   git clone https://github.com/your-username/MusicLeagueWrapped-v2.git
+   git clone https://github.com/cgarren/MusicLeagueWrapped-v2.git
    cd MusicLeagueWrapped-v2
    ```
 
