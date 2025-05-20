@@ -1,6 +1,6 @@
 {
     "compilerOptions": {
-        "baseUrl": ".",
+        "baseUrl": "./MusicLeagueWrapped-v2/",
         "paths": {
             "@/*": ["./*"]
         },
