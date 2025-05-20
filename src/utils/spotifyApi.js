@@ -37,38 +37,13 @@ const getSpotifyToken = async () => {
  */
 export const getTracksPopularity = async (trackIds) => {
 	try {
-		// Split the trackIds into chunks of 50 (Spotify API limit)
-		const chunks = [];
-		for (let i = 0; i < trackIds.length; i += 50) {
-			chunks.push(trackIds.slice(i, i + 50));
-		}
+		const response = await axios({
+			method: 'get',
+			url: `https://6bvfh7nkvf6bkfshv7hurbyn5y0xdktl.lambda-url.us-east-2.on.aws/getTracks?ids=${trackIds.join(',')}`
+		})
 
-		const token = await getSpotifyToken();
-		let allTracksData = {};
 
-		// Process each chunk
-		for (const chunk of chunks) {
-			const response = await axios({
-				method: 'get',
-				url: `https://api.spotify.com/v1/tracks?ids=${chunk.join(',')}`,
-				headers: {
-					'Authorization': `Bearer ${token}`
-				}
-			});
-
-			// Map tracks to their popularity scores
-			response.data.tracks.forEach(track => {
-				if (track) {
-					allTracksData[track.id] = {
-						popularity: track.popularity,
-						name: track.name,
-						artists: track.artists.map(artist => artist.name).join(', ')
-					};
-				}
-			});
-		}
-
-		return allTracksData;
+		return response.data;
 	} catch (error) {
 		console.error('Error fetching track popularity from Spotify:', error);
 		return {};
