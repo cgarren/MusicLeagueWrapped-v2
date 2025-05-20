@@ -5,7 +5,7 @@ import { loadAllData, calculateAllSuperlatives } from '../utils/dataProcessor';
 // Individual award components
 import SuperlativeCard from './SuperlativeCard';
 import VotingGraph from './VotingGraph';
-import CompetitorPerformance from './CompetitorPerformance';
+import IndividualPerformance from './IndividualPerformance';
 
 // Tab Panel component
 function TabPanel(props) {
@@ -133,7 +133,7 @@ const Dashboard = () => {
 			<Box sx={{ borderBottom: 1, borderColor: 'divider', mb: 2 }}>
 				<Tabs value={tabValue} onChange={handleTabChange} aria-label="dashboard tabs" centered>
 					<Tab label="League Overview" {...a11yProps(0)} />
-					<Tab label="Competitor Performance" {...a11yProps(1)} />
+					<Tab label="Individual Performance" {...a11yProps(1)} />
 				</Tabs>
 			</Box>
 
@@ -550,9 +550,9 @@ const Dashboard = () => {
 				</Box>
 			</TabPanel>
 
-			{/* Competitor Performance Tab */}
+			{/* Individual Performance Tab */}
 			<TabPanel value={tabValue} index={1}>
-				<CompetitorPerformance data={data} season={season} />
+				<IndividualPerformance data={data} season={season} />
 			</TabPanel>
 		</Container>
 	);

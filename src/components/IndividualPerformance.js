@@ -1,38 +1,38 @@
 import React, { useState, useEffect } from 'react';
 import { Box, Typography, FormControl, InputLabel, Select, MenuItem, Paper, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Grid, Card, CardContent } from '@mui/material';
 
-const CompetitorPerformance = ({ data, season }) => {
-	const [selectedCompetitor, setSelectedCompetitor] = useState('');
-	const [competitorStats, setCompetitorStats] = useState(null);
-	const [competitorSubmissions, setCompetitorSubmissions] = useState([]);
+const IndividualPerformance = ({ data, season }) => {
+	const [selectedIndividual, setSelectedIndividual] = useState('');
+	const [individualStats, setIndividualStats] = useState(null);
+	const [individualSubmissions, setIndividualSubmissions] = useState([]);
 
 	useEffect(() => {
 		// Reset selection when season changes
-		setSelectedCompetitor('');
-		setCompetitorStats(null);
-		setCompetitorSubmissions([]);
+		setSelectedIndividual('');
+		setIndividualStats(null);
+		setIndividualSubmissions([]);
 	}, [season]);
 
 	useEffect(() => {
-		if (!selectedCompetitor || !data) return;
+		if (!selectedIndividual || !data) return;
 
-		// Calculate all the statistics for the selected competitor
-		const calculateCompetitorStats = () => {
-			if (!data || !selectedCompetitor) return;
+		// Calculate all the statistics for the selected individual
+		const calculateIndividualStats = () => {
+			if (!data || !selectedIndividual) return;
 
 			const { competitors, submissions, votes, rounds } = data;
 
-			// Get competitor info
-			const competitor = competitors.find(comp => comp.ID === selectedCompetitor);
-			if (!competitor) return;
+			// Get individual info
+			const individual = competitors.find(comp => comp.ID === selectedIndividual);
+			if (!individual) return;
 
-			// Get all submissions by this competitor
-			const competitorSubmissions = submissions.filter(sub =>
-				sub['Submitter ID'] === selectedCompetitor
+			// Get all submissions by this individual
+			const individualSubmissions = submissions.filter(sub =>
+				sub['Submitter ID'] === selectedIndividual
 			);
 
 			// Process submissions to include round details and vote counts
-			const processedSubmissions = competitorSubmissions.map(submission => {
+			const processedSubmissions = individualSubmissions.map(submission => {
 				const round = rounds.find(r => r.ID === submission['Round ID']);
 				const roundIndex = rounds.findIndex(r => r.ID === submission['Round ID']);
 				const submissionVotes = votes.filter(vote => vote['Spotify URI'] === submission['Spotify URI']);
@@ -51,31 +51,31 @@ const CompetitorPerformance = ({ data, season }) => {
 				return a.roundNumber - b.roundNumber;
 			});
 
-			setCompetitorSubmissions(processedSubmissions);
+			setIndividualSubmissions(processedSubmissions);
 
 			// Calculate overall rank
-			const competitorPointsMap = {};
+			const individualPointsMap = {};
 
 			submissions.forEach(submission => {
 				const submitterId = submission['Submitter ID'];
 				const submissionVotes = votes.filter(vote => vote['Spotify URI'] === submission['Spotify URI']);
 				const totalVotes = submissionVotes.reduce((sum, vote) => sum + parseInt(vote['Points Assigned'] || 0), 0);
 
-				competitorPointsMap[submitterId] = (competitorPointsMap[submitterId] || 0) + totalVotes;
+				individualPointsMap[submitterId] = (individualPointsMap[submitterId] || 0) + totalVotes;
 			});
 
-			const sortedCompetitors = Object.entries(competitorPointsMap)
+			const sortedIndividuals = Object.entries(individualPointsMap)
 				.map(([id, points]) => ({ id, points }))
 				.sort((a, b) => b.points - a.points);
 
-			const rank = sortedCompetitors.findIndex(c => c.id === selectedCompetitor) + 1;
+			const rank = sortedIndividuals.findIndex(c => c.id === selectedIndividual) + 1;
 
 			// Find biggest fan (who gave them the most points)
 			const pointsByVoter = {};
 
 			votes.forEach(vote => {
 				const submission = submissions.find(sub => sub['Spotify URI'] === vote['Spotify URI']);
-				if (!submission || submission['Submitter ID'] !== selectedCompetitor) return;
+				if (!submission || submission['Submitter ID'] !== selectedIndividual) return;
 
 				const voterId = vote['Voter ID'];
 				pointsByVoter[voterId] = (pointsByVoter[voterId] || 0) + parseInt(vote['Points Assigned'] || 0);
@@ -87,8 +87,8 @@ const CompetitorPerformance = ({ data, season }) => {
 			let biggestCriticPoints = Infinity;
 
 			Object.entries(pointsByVoter).forEach(([voterId, points]) => {
-				// Skip if the voter is the same as the selected competitor
-				if (voterId === selectedCompetitor) return;
+				// Skip if the voter is the same as the selected individual
+				if (voterId === selectedIndividual) return;
 
 				if (points > biggestFanPoints) {
 					biggestFanPoints = points;
@@ -105,14 +105,14 @@ const CompetitorPerformance = ({ data, season }) => {
 			const pairScores = [];
 
 			competitors.forEach(otherComp => {
-				if (otherComp.ID === selectedCompetitor) return;
+				if (otherComp.ID === selectedIndividual) return;
 
-				// Points from selectedCompetitor to otherComp
+				// Points from selectedIndividual to otherComp
 				const votesToOther = votes.filter(vote => {
 					const submission = submissions.find(sub => sub['Spotify URI'] === vote['Spotify URI']);
 					return submission &&
 						submission['Submitter ID'] === otherComp.ID &&
-						vote['Voter ID'] === selectedCompetitor;
+						vote['Voter ID'] === selectedIndividual;
 				});
 
 				let avgPointsToOther = 0;
@@ -121,11 +121,11 @@ const CompetitorPerformance = ({ data, season }) => {
 					avgPointsToOther = totalPointsToOther / votesToOther.length;
 				}
 
-				// Points from otherComp to selectedCompetitor
+				// Points from otherComp to selectedIndividual
 				const votesFromOther = votes.filter(vote => {
 					const submission = submissions.find(sub => sub['Spotify URI'] === vote['Spotify URI']);
 					return submission &&
-						submission['Submitter ID'] === selectedCompetitor &&
+						submission['Submitter ID'] === selectedIndividual &&
 						vote['Voter ID'] === otherComp.ID;
 				});
 
@@ -153,10 +153,10 @@ const CompetitorPerformance = ({ data, season }) => {
 			const voterSimilarities = [];
 
 			competitors.forEach(otherComp => {
-				if (otherComp.ID === selectedCompetitor) return;
+				if (otherComp.ID === selectedIndividual) return;
 
-				// Get all votes by selectedCompetitor
-				const selectedVotes = votes.filter(vote => vote['Voter ID'] === selectedCompetitor);
+				// Get all votes by selectedIndividual
+				const selectedVotes = votes.filter(vote => vote['Voter ID'] === selectedIndividual);
 
 				// Get all votes by otherComp
 				const otherVotes = votes.filter(vote => vote['Voter ID'] === otherComp.ID);
@@ -205,14 +205,14 @@ const CompetitorPerformance = ({ data, season }) => {
 			const mostSimilar = voterSimilarities.length > 0 ? voterSimilarities[0] : null;
 
 			// Calculate average song popularity
-			const avgPopularity = competitorSubmissions.reduce((sum, sub) => sum + (sub.popularity || 0), 0) /
-				(competitorSubmissions.filter(sub => sub.popularity !== null).length || 1);
+			const avgPopularity = individualSubmissions.reduce((sum, sub) => sum + (sub.popularity || 0), 0) /
+				(individualSubmissions.filter(sub => sub.popularity !== null).length || 1);
 
 			// Find the song that got the most votes
 			let bestSong = null;
 			let bestSongVotes = 0;
 
-			competitorSubmissions.forEach(sub => {
+			individualSubmissions.forEach(sub => {
 				const submissionVotes = votes.filter(vote => vote['Spotify URI'] === sub['Spotify URI']);
 				const totalVotes = submissionVotes.reduce((sum, vote) => sum + parseInt(vote['Points Assigned'] || 0), 0);
 
@@ -249,7 +249,7 @@ const CompetitorPerformance = ({ data, season }) => {
 					.map(([voterId, timestamp]) => ({ voterId, timestamp }))
 					.sort((a, b) => a.timestamp - b.timestamp);
 
-				const voterRank = sortedVoters.findIndex(voter => voter.voterId === selectedCompetitor) + 1;
+				const voterRank = sortedVoters.findIndex(voter => voter.voterId === selectedIndividual) + 1;
 
 				if (voterRank > 0) {
 					totalRank += voterRank;
@@ -260,8 +260,8 @@ const CompetitorPerformance = ({ data, season }) => {
 			const avgVotingSpeedRank = roundsCount > 0 ? totalRank / roundsCount : 0;
 
 			// Generate stats object
-			setCompetitorStats({
-				competitor,
+			setIndividualStats({
+				individual,
 				rank,
 				biggestFan,
 				biggestFanPoints,
@@ -278,28 +278,28 @@ const CompetitorPerformance = ({ data, season }) => {
 			});
 		};
 
-		calculateCompetitorStats();
-	}, [selectedCompetitor, data]);
+		calculateIndividualStats();
+	}, [selectedIndividual, data]);
 
-	const handleCompetitorChange = (event) => {
-		setSelectedCompetitor(event.target.value);
+	const handleIndividualChange = (event) => {
+		setSelectedIndividual(event.target.value);
 	};
 
-	// If no competitor is selected, show only the dropdown
-	if (!selectedCompetitor) {
+	// If no individual is selected, show only the dropdown
+	if (!selectedIndividual) {
 		return (
 			<Box sx={{ width: '100%', maxWidth: 500, mx: 'auto', mt: 4, mb: 4 }}>
 				<Typography variant="h4" component="h2" gutterBottom align="center">
-					Competitor Performance
+					Individual Performance
 				</Typography>
 				<FormControl fullWidth sx={{ mb: 4 }}>
-					<InputLabel id="competitor-select-label">Select Competitor</InputLabel>
+					<InputLabel id="individual-select-label">Select Individual</InputLabel>
 					<Select
-						labelId="competitor-select-label"
-						id="competitor-select"
-						value={selectedCompetitor}
-						label="Select Competitor"
-						onChange={handleCompetitorChange}
+						labelId="individual-select-label"
+						id="individual-select"
+						value={selectedIndividual}
+						label="Select Individual"
+						onChange={handleIndividualChange}
 					>
 						{data?.competitors.map((competitor) => (
 							<MenuItem key={competitor.ID} value={competitor.ID}>
@@ -315,17 +315,17 @@ const CompetitorPerformance = ({ data, season }) => {
 	return (
 		<Box sx={{ width: '100%', maxWidth: 1200, mx: 'auto', mt: 4, mb: 6 }}>
 			<Typography variant="h4" component="h2" gutterBottom align="center">
-				Competitor Performance
+				Individual Performance
 			</Typography>
 
 			<FormControl sx={{ minWidth: 200, mb: 4, display: 'block', mx: 'auto' }}>
-				<InputLabel id="competitor-select-label">Select Competitor</InputLabel>
+				<InputLabel id="individual-select-label">Select Individual</InputLabel>
 				<Select
-					labelId="competitor-select-label"
-					id="competitor-select"
-					value={selectedCompetitor}
-					label="Select Competitor"
-					onChange={handleCompetitorChange}
+					labelId="individual-select-label"
+					id="individual-select"
+					value={selectedIndividual}
+					label="Select Individual"
+					onChange={handleIndividualChange}
 				>
 					{data?.competitors.map((competitor) => (
 						<MenuItem key={competitor.ID} value={competitor.ID}>
@@ -335,10 +335,10 @@ const CompetitorPerformance = ({ data, season }) => {
 				</Select>
 			</FormControl>
 
-			{competitorStats && (
+			{individualStats && (
 				<>
 					<Typography variant="h5" component="h3" gutterBottom align="center" sx={{ mt: 3 }}>
-						{competitorStats.competitor.Name}'s Performance
+						{individualStats.individual.Name}'s Performance
 					</Typography>
 
 					<Grid container spacing={3} sx={{ mb: 4 }}>
@@ -346,7 +346,7 @@ const CompetitorPerformance = ({ data, season }) => {
 							<Card>
 								<CardContent>
 									<Typography variant="h6" gutterBottom>Overall Rank</Typography>
-									<Typography variant="h4" color="primary">#{competitorStats.rank}</Typography>
+									<Typography variant="h4" color="primary">#{individualStats.rank}</Typography>
 								</CardContent>
 							</Card>
 						</Grid>
@@ -356,10 +356,10 @@ const CompetitorPerformance = ({ data, season }) => {
 								<CardContent>
 									<Typography variant="h6" gutterBottom>Biggest Fan</Typography>
 									<Typography variant="h5" color="primary">
-										{competitorStats.biggestFan?.Name || 'N/A'}
+										{individualStats.biggestFan?.Name || 'N/A'}
 									</Typography>
 									<Typography variant="body2" color="text.secondary">
-										{competitorStats.biggestFanPoints} total votes
+										{individualStats.biggestFanPoints} total votes
 									</Typography>
 								</CardContent>
 							</Card>
@@ -370,10 +370,10 @@ const CompetitorPerformance = ({ data, season }) => {
 								<CardContent>
 									<Typography variant="h6" gutterBottom>Biggest Critic</Typography>
 									<Typography variant="h5" color="primary">
-										{competitorStats.biggestCritic?.Name || 'N/A'}
+										{individualStats.biggestCritic?.Name || 'N/A'}
 									</Typography>
 									<Typography variant="body2" color="text.secondary">
-										{competitorStats.biggestCriticPoints} total votes
+										{individualStats.biggestCriticPoints} total votes
 									</Typography>
 								</CardContent>
 							</Card>
@@ -384,7 +384,7 @@ const CompetitorPerformance = ({ data, season }) => {
 								<CardContent>
 									<Typography variant="h6" gutterBottom>Most Compatible With</Typography>
 									<Typography variant="h5" color="primary">
-										{competitorStats.mostCompatible?.Name || 'N/A'}
+										{individualStats.mostCompatible?.Name || 'N/A'}
 									</Typography>
 									<Typography variant="body2" color="text.secondary">
 										Based on average points exchanged
@@ -398,7 +398,7 @@ const CompetitorPerformance = ({ data, season }) => {
 								<CardContent>
 									<Typography variant="h6" gutterBottom>Most Similar To</Typography>
 									<Typography variant="h5" color="primary">
-										{competitorStats.mostSimilar?.Name || 'N/A'}
+										{individualStats.mostSimilar?.Name || 'N/A'}
 									</Typography>
 									<Typography variant="body2" color="text.secondary">
 										Based on similarity in voting patterns
@@ -411,7 +411,7 @@ const CompetitorPerformance = ({ data, season }) => {
 							<Card>
 								<CardContent>
 									<Typography variant="h6" gutterBottom>Avg Song Popularity</Typography>
-									<Typography variant="h4" color="primary">{competitorStats.avgPopularity}</Typography>
+									<Typography variant="h4" color="primary">{individualStats.avgPopularity}</Typography>
 									<Typography variant="body2" color="text.secondary">
 										(Spotify popularity scale: 0-100)
 									</Typography>
@@ -424,13 +424,13 @@ const CompetitorPerformance = ({ data, season }) => {
 								<CardContent>
 									<Typography variant="h6" gutterBottom>Best Performing Song</Typography>
 									<Typography variant="h5" color="primary">
-										{competitorStats.bestSong?.Title || 'N/A'}
+										{individualStats.bestSong?.Title || 'N/A'}
 									</Typography>
 									<Typography variant="body2">
-										by {competitorStats.bestSong?.["Artist(s)"] || 'Unknown'}
+										by {individualStats.bestSong?.["Artist(s)"] || 'Unknown'}
 									</Typography>
 									<Typography variant="body2" color="text.secondary">
-										{competitorStats.bestSongVotes} total votes
+										{individualStats.bestSongVotes} total votes
 									</Typography>
 								</CardContent>
 							</Card>
@@ -440,7 +440,7 @@ const CompetitorPerformance = ({ data, season }) => {
 							<Card>
 								<CardContent>
 									<Typography variant="h6" gutterBottom>Voting Speed Rank</Typography>
-									<Typography variant="h4" color="primary">#{competitorStats.avgVotingSpeedRank}</Typography>
+									<Typography variant="h4" color="primary">#{individualStats.avgVotingSpeedRank}</Typography>
 									<Typography variant="body2" color="text.secondary">
 										Average position in voting order
 									</Typography>
@@ -466,7 +466,7 @@ const CompetitorPerformance = ({ data, season }) => {
 								</TableRow>
 							</TableHead>
 							<TableBody>
-								{competitorSubmissions.map((submission) => (
+								{individualSubmissions.map((submission) => (
 									<TableRow
 										key={submission['Spotify URI'] + submission['Round ID']}
 										sx={{ '&:last-child td, &:last-child th': { border: 0 } }}
@@ -492,4 +492,4 @@ const CompetitorPerformance = ({ data, season }) => {
 	);
 };
 
-export default CompetitorPerformance; 
+export default IndividualPerformance; 
