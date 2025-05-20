@@ -908,76 +908,86 @@ export const calculateVotingSimilarity = (votes, submissions, competitors) => {
 
 // Calculate who votes early most often
 export const calculateEarlyVoter = (votes, competitors) => {
-	// Group votes by round
-	const votesByRound = {};
+	// Group votes by round and voter
+	const votesByRoundAndVoter = {};
+	const voterTimestampsByRound = {};
 
+	// Organize votes by round and capture each voter's earliest timestamp per round
 	votes.forEach(vote => {
 		const roundId = vote['Round ID'];
 		const voterId = vote['Voter ID'];
 		const created = new Date(vote['Created']);
 
-		if (!votesByRound[roundId]) votesByRound[roundId] = [];
+		// Track earliest vote timestamp for each voter in each round
+		if (!voterTimestampsByRound[roundId]) {
+			voterTimestampsByRound[roundId] = {};
+		}
 
-		votesByRound[roundId].push({
-			voterId,
-			created
-		});
+		if (!voterTimestampsByRound[roundId][voterId] || created < voterTimestampsByRound[roundId][voterId]) {
+			voterTimestampsByRound[roundId][voterId] = created;
+		}
 	});
 
-	// Count early votes by voter
-	const earlyVoteCount = {};
+	// Count early voting rounds by voter
+	const earlyRoundCount = {};
 
-	Object.values(votesByRound).forEach(roundVotes => {
-		// Sort votes by creation time
-		roundVotes.sort((a, b) => a.created - b.created);
+	Object.entries(voterTimestampsByRound).forEach(([roundId, voterTimestamps]) => {
+		// Convert to array of {voterId, timestamp} for sorting
+		const timestamps = Object.entries(voterTimestamps).map(([voterId, timestamp]) => ({
+			voterId,
+			timestamp
+		}));
 
-		// Consider the first 25% "early"
-		const earlyVoteEnd = Math.ceil(roundVotes.length * 0.25);
+		// Sort by timestamp (earliest first)
+		timestamps.sort((a, b) => a.timestamp - b.timestamp);
 
-		// Count early votes for each voter
-		roundVotes.slice(0, earlyVoteEnd).forEach(vote => {
-			earlyVoteCount[vote.voterId] = (earlyVoteCount[vote.voterId] || 0) + 1;
+		// Consider the first 25% "early voters" for this round
+		const earlyVoterCount = Math.ceil(timestamps.length * 0.25);
+
+		// Count early rounds for each voter
+		timestamps.slice(0, earlyVoterCount).forEach(vote => {
+			earlyRoundCount[vote.voterId] = (earlyRoundCount[vote.voterId] || 0) + 1;
 		});
 	});
 
 	// Convert to array for sorting
-	const competitorsWithEarlyVotes = Object.entries(earlyVoteCount).map(([voterId, count]) => {
+	const competitorsWithEarlyRounds = Object.entries(earlyRoundCount).map(([voterId, count]) => {
 		const competitor = competitors.find(c => c.ID === voterId);
 		return {
 			competitor,
-			earlyVotes: count
+			earlyRounds: count
 		};
 	}).filter(item => item.competitor); // Filter out any undefined competitors
 
-	// Sort by early vote count (descending)
-	competitorsWithEarlyVotes.sort((a, b) => b.earlyVotes - a.earlyVotes);
+	// Sort by early round count (descending)
+	competitorsWithEarlyRounds.sort((a, b) => b.earlyRounds - a.earlyRounds);
 
-	// Check for ties (multiple competitors with the same early vote count)
-	const highestCount = competitorsWithEarlyVotes[0]?.earlyVotes;
-	const tiedWinners = competitorsWithEarlyVotes.filter(item => item.earlyVotes === highestCount);
+	// Check for ties (multiple competitors with the same early round count)
+	const highestCount = competitorsWithEarlyRounds[0]?.earlyRounds;
+	const tiedWinners = competitorsWithEarlyRounds.filter(item => item.earlyRounds === highestCount);
 	const isTied = tiedWinners.length > 1;
 
 	// The winner is the first item in the sorted array
-	const winner = competitorsWithEarlyVotes[0];
+	const winner = competitorsWithEarlyRounds[0];
 
 	// Get tied winners' names if there's a tie
 	const tiedWinnersNames = isTied ? tiedWinners.map(item => item.competitor.Name) : null;
 
 	// Rest of the field (excluding the tied winners if there's a tie)
 	const restOfField = isTied
-		? competitorsWithEarlyVotes.filter(item => item.earlyVotes !== highestCount).map(item => ({
+		? competitorsWithEarlyRounds.filter(item => item.earlyRounds !== highestCount).map(item => ({
 			name: item.competitor.Name,
-			score: `${item.earlyVotes} early votes`
+			score: `${item.earlyRounds} rounds`
 		}))
-		: competitorsWithEarlyVotes.slice(1).map(item => ({
+		: competitorsWithEarlyRounds.slice(1).map(item => ({
 			name: item.competitor.Name,
-			score: `${item.earlyVotes} early votes`
+			score: `${item.earlyRounds} rounds`
 		}));
 
 	return {
 		competitor: winner?.competitor,
-		earlyVotes: winner?.earlyVotes,
-		description: "Awarded to the competitor who most frequently votes in the first 25% of votes cast in each round",
+		earlyRounds: winner?.earlyRounds,
+		description: "Awarded to the competitor who most frequently submitted votes within the first 25% of voting periods",
 		restOfField,
 		isTied,
 		tiedWinners: tiedWinnersNames
@@ -986,76 +996,86 @@ export const calculateEarlyVoter = (votes, competitors) => {
 
 // Calculate who votes last most often
 export const calculateLateVoter = (votes, competitors) => {
-	// Group votes by round
-	const votesByRound = {};
+	// Group votes by round and voter
+	const voterTimestampsByRound = {};
 
+	// Organize votes by round and capture each voter's timestamp per round
 	votes.forEach(vote => {
 		const roundId = vote['Round ID'];
 		const voterId = vote['Voter ID'];
 		const created = new Date(vote['Created']);
 
-		if (!votesByRound[roundId]) votesByRound[roundId] = [];
+		// Track vote timestamp for each voter in each round (save the latest timestamp)
+		if (!voterTimestampsByRound[roundId]) {
+			voterTimestampsByRound[roundId] = {};
+		}
 
-		votesByRound[roundId].push({
-			voterId,
-			created
-		});
+		if (!voterTimestampsByRound[roundId][voterId] || created > voterTimestampsByRound[roundId][voterId]) {
+			voterTimestampsByRound[roundId][voterId] = created;
+		}
 	});
 
-	// Count late votes by voter
-	const lateVoteCount = {};
+	// Count late voting rounds by voter
+	const lateRoundCount = {};
 
-	Object.values(votesByRound).forEach(roundVotes => {
-		// Sort votes by creation time
-		roundVotes.sort((a, b) => a.created - b.created);
+	Object.entries(voterTimestampsByRound).forEach(([roundId, voterTimestamps]) => {
+		// Convert to array of {voterId, timestamp} for sorting
+		const timestamps = Object.entries(voterTimestamps).map(([voterId, timestamp]) => ({
+			voterId,
+			timestamp
+		}));
 
-		// If there are enough votes, consider the last 25% "late"
-		const lateVoteStart = Math.max(0, roundVotes.length - Math.floor(roundVotes.length * 0.25));
+		// Sort by timestamp (latest last)
+		timestamps.sort((a, b) => a.timestamp - b.timestamp);
 
-		// Count late votes for each voter
-		roundVotes.slice(lateVoteStart).forEach(vote => {
-			lateVoteCount[vote.voterId] = (lateVoteCount[vote.voterId] || 0) + 1;
+		// Consider the last 25% "late voters" for this round
+		const voterCount = timestamps.length;
+		const lateVoterStart = Math.max(0, voterCount - Math.ceil(voterCount * 0.25));
+
+		// Count late rounds for each voter
+		timestamps.slice(lateVoterStart).forEach(vote => {
+			lateRoundCount[vote.voterId] = (lateRoundCount[vote.voterId] || 0) + 1;
 		});
 	});
 
 	// Convert to array for sorting
-	const competitorsWithLateVotes = Object.entries(lateVoteCount).map(([voterId, count]) => {
+	const competitorsWithLateRounds = Object.entries(lateRoundCount).map(([voterId, count]) => {
 		const competitor = competitors.find(c => c.ID === voterId);
 		return {
 			competitor,
-			lateVotes: count
+			lateRounds: count
 		};
 	}).filter(item => item.competitor); // Filter out any undefined competitors
 
-	// Sort by late vote count (descending)
-	competitorsWithLateVotes.sort((a, b) => b.lateVotes - a.lateVotes);
+	// Sort by late round count (descending)
+	competitorsWithLateRounds.sort((a, b) => b.lateRounds - a.lateRounds);
 
-	// Check for ties (multiple competitors with the same late vote count)
-	const highestCount = competitorsWithLateVotes[0]?.lateVotes;
-	const tiedWinners = competitorsWithLateVotes.filter(item => item.lateVotes === highestCount);
+	// Check for ties (multiple competitors with the same late round count)
+	const highestCount = competitorsWithLateRounds[0]?.lateRounds;
+	const tiedWinners = competitorsWithLateRounds.filter(item => item.lateRounds === highestCount);
 	const isTied = tiedWinners.length > 1;
 
 	// The winner is the first item in the sorted array
-	const winner = competitorsWithLateVotes[0];
+	const winner = competitorsWithLateRounds[0];
 
 	// Get tied winners' names if there's a tie
 	const tiedWinnersNames = isTied ? tiedWinners.map(item => item.competitor.Name) : null;
 
 	// Rest of the field (excluding the tied winners if there's a tie)
 	const restOfField = isTied
-		? competitorsWithLateVotes.filter(item => item.lateVotes !== highestCount).map(item => ({
+		? competitorsWithLateRounds.filter(item => item.lateRounds !== highestCount).map(item => ({
 			name: item.competitor.Name,
-			score: `${item.lateVotes} late votes`
+			score: `${item.lateRounds} rounds`
 		}))
-		: competitorsWithLateVotes.slice(1).map(item => ({
+		: competitorsWithLateRounds.slice(1).map(item => ({
 			name: item.competitor.Name,
-			score: `${item.lateVotes} late votes`
+			score: `${item.lateRounds} rounds`
 		}));
 
 	return {
 		competitor: winner?.competitor,
-		lateVotes: winner?.lateVotes,
-		description: "Awarded to the competitor who most frequently votes in the last 25% of votes cast in each round",
+		lateRounds: winner?.lateRounds,
+		description: "Awarded to the competitor who most frequently submitted votes within the last 25% of voting periods",
 		restOfField,
 		isTied,
 		tiedWinners: tiedWinnersNames

@@ -462,13 +462,13 @@ const Dashboard = () => {
 									title="Early Bird Voter"
 									description={superlatives?.votingTiming?.earlyVoter?.description}
 									winnerName={superlatives?.votingTiming?.earlyVoter?.competitor?.Name}
-									detail={`${superlatives?.votingTiming?.earlyVoter?.earlyVotes} early votes`}
+									detail={`${superlatives?.votingTiming?.earlyVoter?.earlyRounds} rounds voted early`}
 									additionalCompetitors={superlatives?.votingTiming?.earlyVoter?.restOfField}
 									isTied={superlatives?.votingTiming?.earlyVoter?.isTied}
 									tiedWinners={superlatives?.votingTiming?.earlyVoter?.tiedWinners}
 									tiedDetails={superlatives?.votingTiming?.earlyVoter?.isTied ?
 										superlatives?.votingTiming?.earlyVoter?.tiedWinners?.map(
-											name => `${superlatives?.votingTiming?.earlyVoter?.earlyVotes} early votes`
+											name => `${superlatives?.votingTiming?.earlyVoter?.earlyRounds} rounds voted early`
 										) : null
 									}
 								/>
@@ -486,13 +486,13 @@ const Dashboard = () => {
 									title="Last Minute Voter"
 									description={superlatives?.votingTiming?.lateVoter?.description}
 									winnerName={superlatives?.votingTiming?.lateVoter?.competitor?.Name}
-									detail={`${superlatives?.votingTiming?.lateVoter?.lateVotes} late votes`}
+									detail={`${superlatives?.votingTiming?.lateVoter?.lateRounds} rounds voted late`}
 									additionalCompetitors={superlatives?.votingTiming?.lateVoter?.restOfField}
 									isTied={superlatives?.votingTiming?.lateVoter?.isTied}
 									tiedWinners={superlatives?.votingTiming?.lateVoter?.tiedWinners}
 									tiedDetails={superlatives?.votingTiming?.lateVoter?.isTied ?
 										superlatives?.votingTiming?.lateVoter?.tiedWinners?.map(
-											name => `${superlatives?.votingTiming?.lateVoter?.lateVotes} late votes`
+											name => `${superlatives?.votingTiming?.lateVoter?.lateRounds} rounds voted late`
 										) : null
 									}
 								/>
