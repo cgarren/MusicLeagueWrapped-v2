@@ -1,36 +1,6 @@
 import axios from 'axios';
 
 /**
- * Get Spotify access token using Client Credentials flow
- */
-const getSpotifyToken = async () => {
-	try {
-		// Try to get from environment variables first
-		let clientId = process.env.NEXT_PUBLIC_SPOTIFY_CLIENT_ID || process.env.REACT_APP_SPOTIFY_CLIENT_ID;
-		let clientSecret = process.env.NEXT_PUBLIC_SPOTIFY_CLIENT_SECRET || process.env.REACT_APP_SPOTIFY_CLIENT_SECRET;
-
-		if (!clientId || !clientSecret) {
-			throw new Error('Spotify credentials not found in environment variables');
-		}
-
-		const response = await axios({
-			method: 'post',
-			url: 'https://accounts.spotify.com/api/token',
-			headers: {
-				'Content-Type': 'application/x-www-form-urlencoded',
-				'Authorization': 'Basic ' + btoa(`${clientId}:${clientSecret}`)
-			},
-			data: 'grant_type=client_credentials'
-		});
-
-		return response.data.access_token;
-	} catch (error) {
-		console.error('Error getting Spotify token:', error);
-		throw error;
-	}
-};
-
-/**
  * Get track data from Spotify API for multiple track IDs
  * @param {Array} trackIds - Array of Spotify track IDs
  * @returns {Object} Object with track IDs as keys and popularity scores as values
