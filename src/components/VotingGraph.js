@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Box, Typography, Card, CardContent, Tooltip } from '@mui/material';
+import { Box, Typography, Card, CardContent, Tooltip, useMediaQuery, useTheme } from '@mui/material';
 
 // Enhanced graph visualization to show voting relationships
 const VotingGraph = ({ competitors, votes, submissions }) => {
@@ -7,6 +7,8 @@ const VotingGraph = ({ competitors, votes, submissions }) => {
 	const containerRef = useRef(null);
 	const [hoveredNode, setHoveredNode] = useState(null);
 	const [tooltipPos, setTooltipPos] = useState({ x: 0, y: 0 });
+	const theme = useTheme();
+	const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
 
 	// Calculate voting relationships
 	useEffect(() => {
@@ -62,7 +64,7 @@ const VotingGraph = ({ competitors, votes, submissions }) => {
 		});
 
 		// Position nodes in a circle
-		const nodeRadius = 20;
+		const nodeRadius = isMobile ? 15 : 20;
 		const centerX = width / 2;
 		const centerY = height / 2;
 		const circleRadius = Math.min(width, height) / 2.5 - nodeRadius;
@@ -151,7 +153,7 @@ const VotingGraph = ({ competitors, votes, submissions }) => {
 				if (startPos && endPos && points > 0) {
 					// Calculate line properties based on points
 					const normalizedPoints = points / globalMaxPoints;
-					const lineWidth = Math.max(0.5, normalizedPoints * 8);
+					const lineWidth = Math.max(0.5, normalizedPoints * (isMobile ? 6 : 8));
 					const alpha = Math.min(0.9, Math.max(0.1, normalizedPoints));
 
 					// Draw relationship line
@@ -221,7 +223,7 @@ const VotingGraph = ({ competitors, votes, submissions }) => {
 			ctx.fillStyle = 'white';
 			ctx.textAlign = 'center';
 			ctx.textBaseline = 'middle';
-			ctx.font = 'bold 14px Arial';
+			ctx.font = `bold ${isMobile ? '12px' : '14px'} Arial`;
 
 			// Show more than just first initial if available
 			let label = '';
@@ -243,7 +245,9 @@ const VotingGraph = ({ competitors, votes, submissions }) => {
 		});
 
 		// Add legend
-		drawLegend(ctx, width, height);
+		if (!isMobile) {
+			drawLegend(ctx, width, height);
+		}
 
 		// Add click handler for nodes
 		const handleCanvasClick = (event) => {
@@ -307,7 +311,7 @@ const VotingGraph = ({ competitors, votes, submissions }) => {
 			canvas.removeEventListener('click', handleCanvasClick);
 			canvas.removeEventListener('mousemove', handleCanvasMouseMove);
 		};
-	}, [competitors, votes, submissions, hoveredNode]);
+	}, [competitors, votes, submissions, hoveredNode, isMobile]);
 
 	// Draw legend function
 	const drawLegend = (ctx, width, height) => {
@@ -360,7 +364,13 @@ const VotingGraph = ({ competitors, votes, submissions }) => {
 	};
 
 	return (
-		<Card sx={{ height: '100%', display: 'flex', flexDirection: 'column', width: 'fit-content' }}>
+		<Card sx={{
+			height: '100%',
+			display: 'flex',
+			flexDirection: 'column',
+			width: '100%',
+			maxWidth: { xs: '100%', md: '100%' }
+		}}>
 			<CardContent sx={{ flexGrow: 1 }}>
 				<Typography variant="h5" component="h2" gutterBottom color="primary" fontWeight="bold">
 					Voting Network
@@ -371,21 +381,22 @@ const VotingGraph = ({ competitors, votes, submissions }) => {
 				</Typography>
 
 				<Box sx={{
-					width: 700,
-					height: 500,
+					width: '100%',
+					height: { xs: '350px', sm: '400px', md: '500px' },
 					display: 'flex',
 					justifyContent: 'center',
 					alignItems: 'center',
-					overflow: 'hidden',
 					position: 'relative',
 					border: '1px solid #eee',
 					borderRadius: 1,
 					backgroundColor: '#fdfdfd',
-					boxSizing: 'border-box'
+					boxSizing: 'border-box',
+					overflowX: 'auto',
+					overflowY: 'auto'
 				}} ref={containerRef}>
 					<canvas
 						ref={canvasRef}
-						style={{ width: '100%', height: '100%', display: 'block' }}
+						style={{ width: '100%', height: '100%', display: 'block', minWidth: isMobile ? '300px' : '600px', minHeight: isMobile ? '300px' : '400px' }}
 					/>
 
 					{hoveredNode && (

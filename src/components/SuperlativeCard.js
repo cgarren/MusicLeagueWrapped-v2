@@ -6,7 +6,6 @@ const SuperlativeCard = ({ title, description, winnerName, detail, additionalCom
 		<Card sx={{
 			height: '100%',
 			width: '100%',
-			maxWidth: '500px',
 			display: 'flex',
 			flexDirection: 'column',
 			boxShadow: 3,
@@ -42,19 +41,59 @@ const SuperlativeCard = ({ title, description, winnerName, detail, additionalCom
 
 				{isTied && tiedDetails ? (
 					<>
-						{tiedDetails.map((tiedDetail, index) => (
-							<Box key={index} sx={{ mt: 2, bgcolor: 'background.default', p: 2, borderRadius: 1, flexGrow: 0 }}>
-								<Typography variant="subtitle2" fontWeight="medium">
-									{tiedWinners[index]}:
-								</Typography>
-								<Typography variant="body2" component="div" sx={{ whiteSpace: 'pre-line' }}>
-									{tiedDetail}
-								</Typography>
-							</Box>
-						))}
+						<Box sx={{
+							mt: 2,
+							maxHeight: '180px',
+							overflowY: 'auto',
+							display: 'flex',
+							flexDirection: 'column',
+							gap: 2,
+							pr: 1,
+							'&::-webkit-scrollbar': {
+								width: '8px',
+							},
+							'&::-webkit-scrollbar-track': {
+								backgroundColor: 'rgba(0,0,0,0.05)',
+								borderRadius: '10px',
+							},
+							'&::-webkit-scrollbar-thumb': {
+								backgroundColor: 'rgba(0,0,0,0.2)',
+								borderRadius: '10px',
+							}
+						}}>
+							{tiedDetails.map((tiedDetail, index) => (
+								<Box key={index} sx={{ bgcolor: 'background.default', p: 2, borderRadius: 1, flexGrow: 0 }}>
+									<Typography variant="subtitle2" fontWeight="medium">
+										{tiedWinners[index]}:
+									</Typography>
+									<Typography variant="body2" component="div" sx={{ whiteSpace: 'pre-line' }}>
+										{tiedDetail}
+									</Typography>
+								</Box>
+							))}
+						</Box>
 					</>
 				) : (
-					<Box sx={{ mt: 2, bgcolor: 'background.default', p: 2, borderRadius: 1, flexGrow: 1 }}>
+					<Box sx={{
+						mt: 2,
+						bgcolor: 'background.default',
+						p: 2,
+						borderRadius: 1,
+						flexGrow: 1,
+						maxHeight: '180px',
+						overflowY: 'auto',
+						'&::-webkit-scrollbar': {
+							width: '8px',
+						},
+						'&::-webkit-scrollbar-track': {
+							backgroundColor: 'rgba(0,0,0,0.05)',
+							borderRadius: '10px',
+						},
+						'&::-webkit-scrollbar-thumb': {
+							backgroundColor: 'rgba(0,0,0,0.2)',
+							borderRadius: '10px',
+						}
+					}}>
 						<Typography variant="body2" component="div" sx={{ whiteSpace: 'pre-line' }}>
 							{detail}
 						</Typography>
@@ -70,7 +109,18 @@ const SuperlativeCard = ({ title, description, winnerName, detail, additionalCom
 							bgcolor: 'background.paper',
 							borderRadius: 1,
 							maxHeight: '150px',
-							overflow: 'auto'
+							overflow: 'auto',
+							'&::-webkit-scrollbar': {
+								width: '8px',
+							},
+							'&::-webkit-scrollbar-track': {
+								backgroundColor: 'rgba(0,0,0,0.05)',
+								borderRadius: '10px',
+							},
+							'&::-webkit-scrollbar-thumb': {
+								backgroundColor: 'rgba(0,0,0,0.2)',
+								borderRadius: '10px',
+							}
 						}}>
 							{additionalCompetitors.map((competitor, index) => (
 								<ListItem key={index} sx={{ py: 0.5 }}>
