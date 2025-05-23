@@ -6,18 +6,20 @@ A React dashboard that displays insights and "superlatives" from Music League da
 
 The dashboard calculates and displays the following "superlatives":
 
-- **Most Popular**: Competitor who received the most total points across all submissions
-- **Least Popular**: Competitor who received the least average points per submission
+- **Most Popular Overall**: Competitor who received the most total points across all submissions
+- **Consistently Popular**: Competitor who received the highest average points per submission
 - **Most Average**: Competitor whose average score is closest to the overall average
 - **Best Performance**: Highest-scoring submission in a single round
 - **Longest Comment**: Competitor who left the longest comment
 - **Most Comments Given**: Competitor who left the most comments when voting
-- **Most Compatible Pair**: Two competitors who gave each other the highest proportion of points
-- **Least Compatible Pair**: Two competitors who gave each other the lowest proportion of points
-- **Most Similar Voting**: Two competitors who voted most similarly on the same submissions
-- **Most Dissimilar Voting**: Two competitors who voted most differently on the same submissions
-- **Most Likely to Vote First**: Competitor who consistently votes early
-- **Most Likely to Vote Last**: Competitor who consistently votes late
+- **Most Compatible Pair**: Two competitors who consistently gave each other high votes (based on geometric mean of average votes exchanged)
+- **Least Compatible Pair**: Two competitors who consistently gave each other low votes (based on geometric mean of average votes exchanged)
+- **Most Similar Taste**: Two competitors who voted most similarly across songs (based on average difference in votes assigned)
+- **Most Different Taste**: Two competitors who voted most differently across songs (based on average difference in votes assigned)
+- **Early Bird Voter**: Competitor who most frequently submitted votes within the first 25% of voting periods
+- **Last Minute Voter**: Competitor who most frequently submitted votes within the last 25% of voting periods
+- **Trend Setter**: Competitor who submitted the most obscure songs (based on Spotify popularity)
+- **Crowd Pleaser**: Competitor who submitted the most popular songs (based on Spotify popularity)
 
 ## Getting Started
 
@@ -36,13 +38,12 @@ The dashboard calculates and displays the following "superlatives":
 
 2. Install dependencies:
    ```
-   cd music-league-wrapped
    npm install
    ```
 
 3. Start the development server:
    ```
-   npm start
+   npm run dev
    ```
 
 4. Open your browser and navigate to `http://localhost:3000`
@@ -61,13 +62,11 @@ The data directory supports multiple "seasons" of Music League data, organized i
 ## Technologies Used
 
 - React
+- Next.js
 - Material UI
 - papaparse (for CSV parsing)
 - recharts (for data visualization)
 
-## License
-
-This project is licensed under the MIT License - see the LICENSE file for details.
 
 ## Acknowledgments
 

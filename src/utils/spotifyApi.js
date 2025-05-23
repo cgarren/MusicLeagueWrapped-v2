@@ -7,9 +7,11 @@ import axios from 'axios';
  */
 export const getTracksPopularity = async (trackIds) => {
 	try {
+
+		const secretKey = process.env.NEXT_PUBLIC_LAMBDA_SECRET_KEY;
 		const response = await axios({
 			method: 'get',
-			url: `https://6bvfh7nkvf6bkfshv7hurbyn5y0xdktl.lambda-url.us-east-2.on.aws/getTracks?ids=${trackIds.join(',')}`
+			url: `https://6bvfh7nkvf6bkfshv7hurbyn5y0xdktl.lambda-url.us-east-2.on.aws/getTracks?ids=${trackIds.join(',')}&secretKey=${secretKey}`
 		})
 
 
