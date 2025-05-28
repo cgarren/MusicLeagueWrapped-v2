@@ -123,14 +123,31 @@ const UploadDashboard = () => {
 					Upload your Music League CSV files to generate insights and awards
 				</Typography>
 
+				{/* Disclaimer */}
+				<Typography
+					variant="body2"
+					align="center"
+					sx={{
+						mb: 4,
+						fontSize: { xs: '0.875rem', sm: '1rem' },
+						color: 'text.secondary',
+						fontStyle: 'italic',
+						px: 2
+					}}
+				>
+					<strong>Disclaimer:</strong> This site is not endorsed or affiliated with Music League.
+					It is an independent project created by a fan of the app to provide additional insights
+					and analytics for Music League participants.
+				</Typography>
+
 				{error && (
 					<Alert severity="error" sx={{ mb: 3 }}>
 						{error}
 					</Alert>
 				)}
 
-				<Grid container spacing={3} sx={{ mb: 4 }}>
-					<Grid item xs={12} sm={6} md={3}>
+				<Grid container spacing={3} sx={{ mb: 4, justifyContent: 'center' }}>
+					<Grid item xs={12} sm={6} lg={6} xl={3}>
 						<FileUploadZone
 							onFileUpload={(data, fileName) => handleFileUpload(data, fileName, 'competitors')}
 							fileName={fileNames.competitors}
@@ -139,7 +156,7 @@ const UploadDashboard = () => {
 							description="Upload competitors.csv"
 						/>
 					</Grid>
-					<Grid item xs={12} sm={6} md={3}>
+					<Grid item xs={12} sm={6} lg={6} xl={3}>
 						<FileUploadZone
 							onFileUpload={(data, fileName) => handleFileUpload(data, fileName, 'rounds')}
 							fileName={fileNames.rounds}
@@ -148,7 +165,7 @@ const UploadDashboard = () => {
 							description="Upload rounds.csv"
 						/>
 					</Grid>
-					<Grid item xs={12} sm={6} md={3}>
+					<Grid item xs={12} sm={6} lg={6} xl={3}>
 						<FileUploadZone
 							onFileUpload={(data, fileName) => handleFileUpload(data, fileName, 'submissions')}
 							fileName={fileNames.submissions}
@@ -157,7 +174,7 @@ const UploadDashboard = () => {
 							description="Upload submissions.csv"
 						/>
 					</Grid>
-					<Grid item xs={12} sm={6} md={3}>
+					<Grid item xs={12} sm={6} lg={6} xl={3}>
 						<FileUploadZone
 							onFileUpload={(data, fileName) => handleFileUpload(data, fileName, 'votes')}
 							fileName={fileNames.votes}

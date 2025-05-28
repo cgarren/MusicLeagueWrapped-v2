@@ -402,29 +402,31 @@ const DashboardContent = ({
 						</Grid>
 
 						{/* Doesn't Often Vote */}
-						<Grid item xs={12} sm={6} md={4} lg={4} xl={3} sx={{
-							paddingBottom: 3,
-							display: 'flex',
-							justifyContent: 'center'
-						}}>
-							<Box sx={{ width: '100%', maxWidth: '500px' }}>
-								<SuperlativeCard
-									title="Doesn't Often Vote"
-									description="Missed the most rounds of voting"
-									winnerName={superlatives?.doesntVote?.competitor?.Name}
-									detail={`${superlatives?.doesntVote?.roundsMissed}/${superlatives?.doesntVote?.totalRounds} rounds missed (${superlatives?.doesntVote?.missedPercentage}%)
+						{superlatives?.doesntVote?.competitor && (
+							<Grid item xs={12} sm={6} md={4} lg={4} xl={3} sx={{
+								paddingBottom: 3,
+								display: 'flex',
+								justifyContent: 'center'
+							}}>
+								<Box sx={{ width: '100%', maxWidth: '500px' }}>
+									<SuperlativeCard
+										title="Doesn't Often Vote"
+										description="Missed the most rounds of voting"
+										winnerName={superlatives?.doesntVote?.competitor?.Name}
+										detail={`${superlatives?.doesntVote?.roundsMissed}/${superlatives?.doesntVote?.totalRounds} rounds missed (${superlatives?.doesntVote?.missedPercentage}%)
 								Participated in: ${superlatives?.doesntVote?.roundsParticipated} rounds`}
-									additionalCompetitors={superlatives?.doesntVote?.restOfField}
-									isTied={superlatives?.doesntVote?.isTied}
-									tiedWinners={superlatives?.doesntVote?.tiedWinners}
-									tiedDetails={superlatives?.doesntVote?.isTied ?
-										superlatives?.doesntVote?.tiedWinners?.map(
-											name => `${superlatives?.doesntVote?.roundsMissed}/${superlatives?.doesntVote?.totalRounds} rounds missed (${superlatives?.doesntVote?.missedPercentage}%)`
-										) : null
-									}
-								/>
-							</Box>
-						</Grid>
+										additionalCompetitors={superlatives?.doesntVote?.restOfField}
+										isTied={superlatives?.doesntVote?.isTied}
+										tiedWinners={superlatives?.doesntVote?.tiedWinners}
+										tiedDetails={superlatives?.doesntVote?.isTied ?
+											superlatives?.doesntVote?.tiedWinners?.map(
+												name => `${superlatives?.doesntVote?.roundsMissed}/${superlatives?.doesntVote?.totalRounds} rounds missed (${superlatives?.doesntVote?.missedPercentage}%)`
+											) : null
+										}
+									/>
+								</Box>
+							</Grid>
+						)}
 					</Grid>
 
 					{/* Timing & Participation Section */}

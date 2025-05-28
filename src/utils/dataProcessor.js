@@ -1,6 +1,40 @@
 import Papa from 'papaparse';
 import { getTracksPopularity, extractTrackIdsFromUris } from './spotifyApi';
 
+// Function to get available seasons dynamically
+export const getAvailableSeasons = async () => {
+	try {
+		// Since we can't directly list directories in the browser, we'll try to fetch each season
+		// and see which ones exist. We'll try seasons 1-10 for now.
+		const maxSeasons = 10;
+		const availableSeasons = [];
+
+		for (let i = 1; i <= maxSeasons; i++) {
+			const seasonId = `season${i}`;
+			try {
+				// Try to fetch the competitors.csv file for this season
+				const response = await fetch(`/data/${seasonId}/competitors.csv`);
+				if (response.ok) {
+					availableSeasons.push({
+						id: seasonId,
+						label: `Season ${i}`,
+						number: i
+					});
+				}
+			} catch (error) {
+				// Season doesn't exist, continue to next
+				continue;
+			}
+		}
+
+		return availableSeasons;
+	} catch (error) {
+		console.error('Error detecting available seasons:', error);
+		// Fallback to just season1 if detection fails
+		return [{ id: 'season1', label: 'Season 1', number: 1 }];
+	}
+};
+
 // Function to load and parse a CSV file
 const loadCSV = async (filePath) => {
 	try {
@@ -753,6 +787,7 @@ export const calculateVotingSimilarity = (votes, submissions, competitors) => {
 
 	// Create a mapping of voter -> round -> submission -> points
 	const votingPatterns = {};
+	const voterRoundCounts = {}; // Track how many rounds each voter participated in
 
 	votes.forEach(vote => {
 		const voterId = vote['Voter ID'];
@@ -760,10 +795,14 @@ export const calculateVotingSimilarity = (votes, submissions, competitors) => {
 		const roundId = submissionToRound[submissionUri];
 		const points = parseInt(vote['Points Assigned'] || 0);
 
-		if (!votingPatterns[voterId]) votingPatterns[voterId] = {};
+		if (!votingPatterns[voterId]) {
+			votingPatterns[voterId] = {};
+			voterRoundCounts[voterId] = new Set();
+		}
 		if (!votingPatterns[voterId][roundId]) votingPatterns[voterId][roundId] = {};
 
 		votingPatterns[voterId][roundId][submissionUri] = points;
+		voterRoundCounts[voterId].add(roundId);
 	});
 
 	// Calculate similarity scores between voters
@@ -786,13 +825,31 @@ export const calculateVotingSimilarity = (votes, submissions, competitors) => {
 			if (processedPairs.has(pairKey)) return;
 			processedPairs.add(pairKey);
 
+			// Get participation counts
+			const roundsA = voterRoundCounts[voterIdA]?.size || 0;
+			const roundsB = voterRoundCounts[voterIdB]?.size || 0;
+
+			// Participation balance safeguard: both players must have participated in at least 3 rounds
+			// and their participation difference shouldn't be more than 50% of the lower count
+			if (roundsA < 3 || roundsB < 3) return;
+
+			const minRounds = Math.min(roundsA, roundsB);
+			const maxRounds = Math.max(roundsA, roundsB);
+			const participationRatio = minRounds / maxRounds;
+
+			// Require at least 60% participation overlap to ensure fair comparison
+			if (participationRatio < 0.6) return;
+
 			let totalDiff = 0;
 			let submissionCount = 0;
+			let roundsCompared = 0;
 
 			// Compare votes in each round
 			Object.keys(votingPatterns[voterIdA] || {}).forEach(roundId => {
 				// Skip if either voter didn't vote in this round
 				if (!votingPatterns[voterIdB] || !votingPatterns[voterIdB][roundId]) return;
+
+				roundsCompared++;
 
 				// Find submissions that both voted on
 				const submissionsA = votingPatterns[voterIdA][roundId];
@@ -808,30 +865,76 @@ export const calculateVotingSimilarity = (votes, submissions, competitors) => {
 				});
 			});
 
-			// Calculate average difference (if they voted on enough common submissions)
-			if (submissionCount >= 5) {
-				const avgDiff = totalDiff / submissionCount;
-				// Similarity is inverse of difference (5 - avgDiff gives a higher score for more similar)
-				const similarity = Math.max(5 - avgDiff, 0);
+			// Enhanced minimum sample size: require at least 10 common votes and 3 common rounds
+			if (submissionCount < 10 || roundsCompared < 3) return;
 
-				similarityScores.push({
-					pairKey,
-					competitor1: competitorA,
-					competitor2: competitorB,
-					similarity,
-					votesCompared: submissionCount,
-					avgDiff: avgDiff.toFixed(2)
-				});
+			// Calculate average difference and handle edge cases
+			const avgDiff = submissionCount > 0 ? totalDiff / submissionCount : 0;
+
+			// Enhanced similarity calculation with safeguards
+			let similarity;
+			if (avgDiff === 0) {
+				// Perfect similarity case - they voted identically on all common songs
+				similarity = 5.0;
+			} else {
+				// Similarity is inverse of difference, capped at 0
+				similarity = Math.max(5 - avgDiff, 0);
 			}
+
+			// Additional safeguard: if similarity is NaN or undefined, skip this pair
+			if (isNaN(similarity) || similarity === undefined) return;
+
+			similarityScores.push({
+				pairKey,
+				competitor1: competitorA,
+				competitor2: competitorB,
+				similarity,
+				votesCompared: submissionCount,
+				roundsCompared,
+				avgDiff: avgDiff.toFixed(2),
+				participationA: roundsA,
+				participationB: roundsB,
+				participationRatio: participationRatio.toFixed(3)
+			});
 		});
 	});
+
+	// If no valid similarity scores were calculated, return empty results
+	if (similarityScores.length === 0) {
+		return {
+			mostSimilar: {
+				competitor1: null,
+				competitor2: null,
+				score: null,
+				votesCompared: null,
+				avgDiff: null,
+				restOfField: [],
+				isTied: false,
+				tiedWinners: null,
+				tiedPairs: null
+			},
+			leastSimilar: {
+				competitor1: null,
+				competitor2: null,
+				score: null,
+				votesCompared: null,
+				avgDiff: null,
+				restOfField: [],
+				isTied: false,
+				tiedWinners: null,
+				tiedPairs: null
+			}
+		};
+	}
 
 	// Sort for most similar (descending)
 	const sortedBySimilarity = [...similarityScores].sort((a, b) => b.similarity - a.similarity);
 
 	// Check for ties in most similar (multiple pairs with the same highest similarity)
 	const highestSimilarity = sortedBySimilarity[0]?.similarity;
-	const tiedMostSimilar = sortedBySimilarity.filter(item => item.similarity === highestSimilarity);
+	const tiedMostSimilar = sortedBySimilarity.filter(item =>
+		Math.abs(item.similarity - highestSimilarity) < 0.01
+	);
 	const isMostSimilarTied = tiedMostSimilar.length > 1;
 
 	// The most similar pair is the first item in the sorted array
@@ -844,7 +947,7 @@ export const calculateVotingSimilarity = (votes, submissions, competitors) => {
 
 	// Rest of the field for most similar (excluding the tied pairs if there's a tie)
 	const mostSimilarRestOfField = isMostSimilarTied
-		? sortedBySimilarity.filter(item => item.similarity !== highestSimilarity).slice(0, 8).map(item => ({
+		? sortedBySimilarity.filter(item => Math.abs(item.similarity - highestSimilarity) >= 0.01).slice(0, 8).map(item => ({
 			name: `${item.competitor1.Name} & ${item.competitor2.Name}`,
 			score: `Similarity: ${item.similarity.toFixed(2)}`
 		}))
@@ -858,7 +961,9 @@ export const calculateVotingSimilarity = (votes, submissions, competitors) => {
 
 	// Check for ties in least similar (multiple pairs with the same lowest similarity)
 	const lowestSimilarity = sortedByDissimilarity[0]?.similarity;
-	const tiedLeastSimilar = sortedByDissimilarity.filter(item => item.similarity === lowestSimilarity);
+	const tiedLeastSimilar = sortedByDissimilarity.filter(item =>
+		Math.abs(item.similarity - lowestSimilarity) < 0.01
+	);
 	const isLeastSimilarTied = tiedLeastSimilar.length > 1;
 
 	// The least similar pair is the first item in the sorted array
@@ -871,7 +976,7 @@ export const calculateVotingSimilarity = (votes, submissions, competitors) => {
 
 	// Rest of the field for least similar (excluding the tied pairs if there's a tie)
 	const leastSimilarRestOfField = isLeastSimilarTied
-		? sortedByDissimilarity.filter(item => item.similarity !== lowestSimilarity).slice(0, 8).map(item => ({
+		? sortedByDissimilarity.filter(item => Math.abs(item.similarity - lowestSimilarity) >= 0.01).slice(0, 8).map(item => ({
 			name: `${item.competitor1.Name} & ${item.competitor2.Name}`,
 			score: `Similarity: ${item.similarity.toFixed(2)}`
 		}))
@@ -1730,6 +1835,11 @@ export const calculateDoesntVote = (votes, competitors, rounds) => {
 	const totalRounds = validRounds.length;
 
 	competitors.forEach(competitor => {
+		// Validate that the competitor has required properties
+		if (!competitor || !competitor.ID || !competitor.Name || competitor.Name.trim() === '') {
+			return; // Skip invalid competitors
+		}
+
 		const competitorId = competitor.ID;
 		const roundsParticipated = roundsParticipatedByCompetitor[competitorId]?.size || 0;
 		const roundsMissed = totalRounds - roundsParticipated;
@@ -1746,6 +1856,20 @@ export const calculateDoesntVote = (votes, competitors, rounds) => {
 		}
 	});
 
+	// If no valid competitors with missed rounds, return empty result
+	if (competitorsWithMissedRounds.length === 0) {
+		return {
+			competitor: null,
+			roundsMissed: null,
+			roundsParticipated: null,
+			totalRounds: totalRounds,
+			missedPercentage: null,
+			restOfField: [],
+			isTied: false,
+			tiedWinners: null
+		};
+	}
+
 	// Sort by rounds missed (descending)
 	competitorsWithMissedRounds.sort((a, b) => b.roundsMissed - a.roundsMissed);
 
@@ -1757,32 +1881,52 @@ export const calculateDoesntVote = (votes, competitors, rounds) => {
 	// The winner is the first item in the sorted array
 	const winner = competitorsWithMissedRounds[0];
 
-	// Get tied winners' names if there's a tie
-	const tiedWinnersNames = isTied ? tiedWinners.map(item => item.competitor.Name) : null;
+	// Additional validation for the winner
+	if (!winner || !winner.competitor || !winner.competitor.Name) {
+		return {
+			competitor: null,
+			roundsMissed: null,
+			roundsParticipated: null,
+			totalRounds: totalRounds,
+			missedPercentage: null,
+			restOfField: [],
+			isTied: false,
+			tiedWinners: null
+		};
+	}
 
-	// Rest of the field (excluding tied winners if there's a tie)
+	// Get tied winners' names if there's a tie - with validation
+	const tiedWinnersNames = isTied ? tiedWinners
+		.filter(item => item.competitor && item.competitor.Name) // Filter out invalid names
+		.map(item => item.competitor.Name) : null;
+
+	// Rest of the field (excluding tied winners if there's a tie) - with validation
 	const restOfField = isTied
-		? competitorsWithMissedRounds.filter(item => item.roundsMissed !== highestMissed).map(item => ({
-			name: item.competitor.Name,
-			score: `${item.roundsMissed}/${item.totalRounds} rounds missed (${item.missedPercentage.toFixed(1)}%)`
-		}))
-		: competitorsWithMissedRounds.slice(1).map(item => ({
-			name: item.competitor.Name,
-			score: `${item.roundsMissed}/${item.totalRounds} rounds missed (${item.missedPercentage.toFixed(1)}%)`
-		}));
+		? competitorsWithMissedRounds
+			.filter(item => item.roundsMissed !== highestMissed && item.competitor && item.competitor.Name)
+			.map(item => ({
+				name: item.competitor.Name,
+				score: `${item.roundsMissed}/${item.totalRounds} rounds missed (${item.missedPercentage.toFixed(1)}%)`
+			}))
+		: competitorsWithMissedRounds
+			.slice(1)
+			.filter(item => item.competitor && item.competitor.Name)
+			.map(item => ({
+				name: item.competitor.Name,
+				score: `${item.roundsMissed}/${item.totalRounds} rounds missed (${item.missedPercentage.toFixed(1)}%)`
+			}));
 
 	return {
-		competitor: winner?.competitor,
-		roundsMissed: winner?.roundsMissed,
-		roundsParticipated: winner?.roundsParticipated,
-		totalRounds: winner?.totalRounds,
-		missedPercentage: winner?.missedPercentage?.toFixed(1),
+		competitor: winner.competitor,
+		roundsMissed: winner.roundsMissed,
+		roundsParticipated: winner.roundsParticipated,
+		totalRounds: winner.totalRounds,
+		missedPercentage: winner.missedPercentage?.toFixed(1),
 		restOfField,
 		isTied,
 		tiedWinners: tiedWinnersNames
 	};
 };
-
 
 // Calculate the competitor who gives the most single-point votes (Single-Vote Giver)
 export const calculateSingleVoteGiver = (votes, competitors) => {
