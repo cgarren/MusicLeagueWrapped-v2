@@ -1783,6 +1783,93 @@ export const calculateDoesntVote = (votes, competitors, rounds) => {
 	};
 };
 
+
+// Calculate the competitor who gives the most single-point votes (Single-Vote Giver)
+export const calculateSingleVoteGiver = (votes, competitors) => {
+	// Count single votes and total individual votes by voter
+	const singleVotesByVoter = {};
+	const totalIndividualVotesByVoter = {};
+
+	votes.forEach(vote => {
+		const voterId = vote['Voter ID'];
+		const points = parseInt(vote['Points Assigned'] || 0);
+
+		// Initialize counters
+		if (!singleVotesByVoter[voterId]) singleVotesByVoter[voterId] = 0;
+		if (!totalIndividualVotesByVoter[voterId]) totalIndividualVotesByVoter[voterId] = 0;
+
+		// Count total individual votes (each point counts as one vote)
+		totalIndividualVotesByVoter[voterId] += points;
+
+		// Count single votes (exactly 1 point given to a submission)
+		if (points === 1) {
+			singleVotesByVoter[voterId]++;
+		}
+	});
+
+	// Calculate single vote percentages for competitors with enough votes
+	const competitorsWithSingleVoteStats = [];
+
+	Object.entries(singleVotesByVoter).forEach(([voterId, singleCount]) => {
+		const totalIndividualVotes = totalIndividualVotesByVoter[voterId];
+
+		// Only consider voters with at least 30 individual votes
+		if (totalIndividualVotes >= 30) {
+			const singlePercentage = (singleCount / totalIndividualVotes) * 100;
+
+			const competitor = competitors.find(comp => comp.ID === voterId);
+
+			if (competitor) {
+				competitorsWithSingleVoteStats.push({
+					competitor,
+					singleCount,
+					totalIndividualVotes,
+					singlePercentage
+				});
+			}
+		}
+	});
+
+	// Sort by single vote percentage (descending)
+	competitorsWithSingleVoteStats.sort((a, b) => b.singlePercentage - a.singlePercentage);
+
+	// Check for ties (multiple competitors with the same single vote percentage)
+	const highestSinglePercentage = competitorsWithSingleVoteStats[0]?.singlePercentage;
+	const tiedWinners = competitorsWithSingleVoteStats.filter(item =>
+		Math.abs(item.singlePercentage - highestSinglePercentage) < 0.1
+	);
+	const isTied = tiedWinners.length > 1;
+
+	// The winner is the first item in the sorted array
+	const winner = competitorsWithSingleVoteStats[0];
+
+	// Get tied winners' names if there's a tie
+	const tiedWinnersNames = isTied ? tiedWinners.map(item => item.competitor.Name) : null;
+
+	// Rest of the field (excluding tied winners if there's a tie)
+	const restOfField = isTied
+		? competitorsWithSingleVoteStats.filter(item =>
+			Math.abs(item.singlePercentage - highestSinglePercentage) >= 0.1
+		).map(item => ({
+			name: item.competitor.Name,
+			score: `${item.singleCount} single votes (${item.singlePercentage.toFixed(1)}% of ${item.totalIndividualVotes} total votes)`
+		}))
+		: competitorsWithSingleVoteStats.slice(1).map(item => ({
+			name: item.competitor.Name,
+			score: `${item.singleCount} single votes (${item.singlePercentage.toFixed(1)}% of ${item.totalIndividualVotes} total votes)`
+		}));
+
+	return {
+		competitor: winner?.competitor,
+		singleCount: winner?.singleCount,
+		totalVotes: winner?.totalIndividualVotes,
+		singlePercentage: winner?.singlePercentage?.toFixed(1),
+		restOfField,
+		isTied,
+		tiedWinners: tiedWinnersNames
+	};
+};
+
 // Calculate all superlatives at once
 export const calculateAllSuperlatives = (data) => {
 	const { competitors, rounds, submissions, votes } = data;
@@ -1801,7 +1888,7 @@ export const calculateAllSuperlatives = (data) => {
 	const mainstream = calculateMainstream(submissions, competitors);
 	const trendSetter = calculateTrendSetter(submissions, competitors);
 	const voteSpreader = calculateVoteSpreader(votes, competitors);
-	const zeroVoteGiver = calculateZeroVoteGiver(votes, competitors);
+	const singleVoteGiver = calculateSingleVoteGiver(votes, competitors);
 	const maxVoteGiver = calculateMaxVoteGiver(votes, competitors);
 	const comebackKid = calculateComebackKid(votes, submissions, competitors, rounds);
 	const doesntVote = calculateDoesntVote(votes, competitors, rounds);
@@ -1828,9 +1915,9 @@ export const calculateAllSuperlatives = (data) => {
 			trendSetter
 		},
 		voteSpreader,
-		zeroVoteGiver,
+		singleVoteGiver,
 		maxVoteGiver,
 		comebackKid,
 		doesntVote
 	};
-}; 
+};

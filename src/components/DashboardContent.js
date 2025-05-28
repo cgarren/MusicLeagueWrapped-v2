@@ -353,7 +353,7 @@ const DashboardContent = ({
 							</Box>
 						</Grid>
 
-						{/* Zero-Vote Giver */}
+						{/* Single-Vote Giver */}
 						<Grid item xs={12} sm={6} md={4} lg={4} xl={3} sx={{
 							paddingBottom: 3,
 							display: 'flex',
@@ -361,17 +361,16 @@ const DashboardContent = ({
 						}}>
 							<Box sx={{ width: '100%', maxWidth: '500px' }}>
 								<SuperlativeCard
-									title="Zero-Vote Giver"
-									description="Awarded the most zero-point votes to other submissions"
-									winnerName={superlatives?.zeroVoteGiver?.competitor?.Name}
-									detail={`${superlatives?.zeroVoteGiver?.zeroCount} zero votes (${superlatives?.zeroVoteGiver?.zeroPercentage}% of ${superlatives?.zeroVoteGiver?.totalSubmissionsVotedOn} submissions)
-								Total individual votes given: ${superlatives?.zeroVoteGiver?.totalVotes}`}
-									additionalCompetitors={superlatives?.zeroVoteGiver?.restOfField}
-									isTied={superlatives?.zeroVoteGiver?.isTied}
-									tiedWinners={superlatives?.zeroVoteGiver?.tiedWinners}
-									tiedDetails={superlatives?.zeroVoteGiver?.isTied ?
-										superlatives?.zeroVoteGiver?.tiedWinners?.map(
-											name => `${superlatives?.zeroVoteGiver?.zeroCount} zero votes (${superlatives?.zeroVoteGiver?.zeroPercentage}% of ${superlatives?.zeroVoteGiver?.totalSubmissionsVotedOn} submissions)`
+									title="Single-Vote Giver"
+									description="Gave the highest percentage of their total votes as single votes to songs"
+									winnerName={superlatives?.singleVoteGiver?.competitor?.Name}
+									detail={`${superlatives?.singleVoteGiver?.singleCount} single votes (${superlatives?.singleVoteGiver?.singlePercentage}% of ${superlatives?.singleVoteGiver?.totalVotes} total votes)`}
+									additionalCompetitors={superlatives?.singleVoteGiver?.restOfField}
+									isTied={superlatives?.singleVoteGiver?.isTied}
+									tiedWinners={superlatives?.singleVoteGiver?.tiedWinners}
+									tiedDetails={superlatives?.singleVoteGiver?.isTied ?
+										superlatives?.singleVoteGiver?.tiedWinners?.map(
+											name => `${superlatives?.singleVoteGiver?.singleCount} single votes (${superlatives?.singleVoteGiver?.singlePercentage}% of ${superlatives?.singleVoteGiver?.totalVotes} total votes)`
 										) : null
 									}
 								/>
