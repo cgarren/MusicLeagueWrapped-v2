@@ -193,6 +193,40 @@ const IndividualPerformance = ({ data, season }) => {
 				// Get all votes by otherComp
 				const otherVotes = votes.filter(vote => vote['Voter ID'] === otherComp.ID);
 
+				// Build submission to round mapping for participation tracking
+				const submissionToRound = {};
+				submissions.forEach(submission => {
+					submissionToRound[submission['Spotify URI']] = submission['Round ID'];
+				});
+
+				// Track rounds each voter participated in
+				const selectedRounds = new Set();
+				const otherRounds = new Set();
+
+				selectedVotes.forEach(vote => {
+					const roundId = submissionToRound[vote['Spotify URI']];
+					if (roundId) selectedRounds.add(roundId);
+				});
+
+				otherVotes.forEach(vote => {
+					const roundId = submissionToRound[vote['Spotify URI']];
+					if (roundId) otherRounds.add(roundId);
+				});
+
+				const selectedRoundCount = selectedRounds.size;
+				const otherRoundCount = otherRounds.size;
+
+				// Participation balance safeguard: both players must have participated in at least 3 rounds
+				// and their participation difference shouldn't be more than 50% of the lower count
+				if (selectedRoundCount < 3 || otherRoundCount < 3) return;
+
+				const minRounds = Math.min(selectedRoundCount, otherRoundCount);
+				const maxRounds = Math.max(selectedRoundCount, otherRoundCount);
+				const participationRatio = minRounds / maxRounds;
+
+				// Require at least 60% participation overlap to ensure fair comparison
+				if (participationRatio < 0.6) return;
+
 				// Find common songs voted on
 				const commonSongURIs = new Set();
 
@@ -203,34 +237,50 @@ const IndividualPerformance = ({ data, season }) => {
 					}
 				});
 
-				// Calculate similarity if there are common songs
-				if (commonSongURIs.size > 0) {
-					let totalDifference = 0;
-					let count = 0;
+				// Enhanced minimum sample size: require at least 10 common votes
+				if (commonSongURIs.size < 10) return;
 
-					commonSongURIs.forEach(uri => {
-						const selectedVote = selectedVotes.find(vote => vote['Spotify URI'] === uri);
-						const otherVote = otherVotes.find(vote => vote['Spotify URI'] === uri);
+				// Calculate similarity if there are enough common songs
+				let totalDifference = 0;
+				let count = 0;
 
-						if (selectedVote && otherVote) {
-							const diff = Math.abs(
-								parseInt(selectedVote['Points Assigned'] || 0) -
-								parseInt(otherVote['Points Assigned'] || 0)
-							);
-							totalDifference += diff;
-							count++;
-						}
-					});
+				commonSongURIs.forEach(uri => {
+					const selectedVote = selectedVotes.find(vote => vote['Spotify URI'] === uri);
+					const otherVote = otherVotes.find(vote => vote['Spotify URI'] === uri);
 
-					const avgDifference = count > 0 ? totalDifference / count : 0;
-					const similarity = count > 0 ? 1 / (1 + avgDifference) : 0; // Higher value = more similar
+					if (selectedVote && otherVote) {
+						const diff = Math.abs(
+							parseInt(selectedVote['Points Assigned'] || 0) -
+							parseInt(otherVote['Points Assigned'] || 0)
+						);
+						totalDifference += diff;
+						count++;
+					}
+				});
 
-					voterSimilarities.push({
-						competitor: otherComp,
-						similarity,
-						commonSongs: commonSongURIs.size
-					});
+				// Calculate average difference and handle edge cases
+				const avgDifference = count > 0 ? totalDifference / count : 0;
+
+				// Enhanced similarity calculation with safeguards
+				let similarity;
+				if (avgDifference === 0) {
+					// Perfect similarity case - they voted identically on all common songs
+					similarity = 5.0;
+				} else {
+					// Similarity is inverse of difference, capped at 0
+					similarity = Math.max(5 - avgDifference, 0);
 				}
+
+				// Additional safeguard: if similarity is NaN or undefined, skip this competitor
+				if (isNaN(similarity) || similarity === undefined) return;
+
+				voterSimilarities.push({
+					competitor: otherComp,
+					similarity,
+					commonSongs: commonSongURIs.size,
+					participationRatio: participationRatio.toFixed(3),
+					avgDifference: avgDifference.toFixed(2)
+				});
 			});
 
 			voterSimilarities.sort((a, b) => b.similarity - a.similarity);
@@ -403,109 +453,147 @@ const IndividualPerformance = ({ data, season }) => {
 						{individualStats.individual.Name}'s Performance
 					</Typography>
 
-					<Grid container spacing={3} sx={{ mb: 4 }}>
-						<Grid item xs={12} sm={6} md={4}>
-							<Card>
-								<CardContent>
-									<Typography variant="h6" gutterBottom>Overall Rank</Typography>
-									<Typography variant="h4" color="primary">#{individualStats.rank}</Typography>
+					<Grid container spacing={3} sx={{ mb: 4, justifyContent: 'center' }}>
+						<Grid item xs={12} sm={6} md={4} sx={{ display: 'flex', justifyContent: 'center' }}>
+							<Card sx={{ height: '100%', display: 'flex', flexDirection: 'column', width: '100%', maxWidth: { xs: 400, sm: 'none' } }}>
+								<CardContent sx={{ flexGrow: 1, display: 'flex', flexDirection: 'column', justifyContent: 'space-between', minHeight: 140 }}>
+									<Typography variant="h6" gutterBottom sx={{ fontWeight: 'bold', minHeight: { xs: '1.5rem', sm: '2rem' } }}>
+										Overall Rank
+									</Typography>
+									<Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', flexGrow: 1 }}>
+										<Typography variant="h4" color="primary" sx={{ fontWeight: 'bold' }}>
+											#{individualStats.rank}
+										</Typography>
+									</Box>
 								</CardContent>
 							</Card>
 						</Grid>
 
-						<Grid item xs={12} sm={6} md={4}>
-							<Card>
-								<CardContent>
-									<Typography variant="h6" gutterBottom>Biggest Fan</Typography>
-									<Typography variant="h5" color="primary">
-										{individualStats.biggestFan?.Name || 'N/A'}
+						<Grid item xs={12} sm={6} md={4} sx={{ display: 'flex', justifyContent: 'center' }}>
+							<Card sx={{ height: '100%', display: 'flex', flexDirection: 'column', width: '100%', maxWidth: { xs: 400, sm: 'none' } }}>
+								<CardContent sx={{ flexGrow: 1, display: 'flex', flexDirection: 'column', justifyContent: 'space-between', minHeight: 140 }}>
+									<Typography variant="h6" gutterBottom sx={{ fontWeight: 'bold', minHeight: { xs: '1.5rem', sm: '2rem' } }}>
+										Biggest Fan
 									</Typography>
-									<Typography variant="body2" color="text.secondary">
-										{individualStats.biggestFanPoints} total votes
-									</Typography>
+									<Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', flexGrow: 1 }}>
+										<Typography variant="h5" color="primary" sx={{ fontWeight: 'bold', textAlign: 'center', mb: 1 }}>
+											{individualStats.biggestFan?.Name || 'N/A'}
+										</Typography>
+										<Typography variant="body2" color="text.secondary" sx={{ textAlign: 'center' }}>
+											{individualStats.biggestFanPoints} total votes
+										</Typography>
+									</Box>
 								</CardContent>
 							</Card>
 						</Grid>
 
-						<Grid item xs={12} sm={6} md={4}>
-							<Card>
-								<CardContent>
-									<Typography variant="h6" gutterBottom>Biggest Critic</Typography>
-									<Typography variant="h5" color="primary">
-										{individualStats.biggestCritic?.Name || 'N/A'}
+						<Grid item xs={12} sm={6} md={4} sx={{ display: 'flex', justifyContent: 'center' }}>
+							<Card sx={{ height: '100%', display: 'flex', flexDirection: 'column', width: '100%', maxWidth: { xs: 400, sm: 'none' } }}>
+								<CardContent sx={{ flexGrow: 1, display: 'flex', flexDirection: 'column', justifyContent: 'space-between', minHeight: 140 }}>
+									<Typography variant="h6" gutterBottom sx={{ fontWeight: 'bold', minHeight: { xs: '1.5rem', sm: '2rem' } }}>
+										Biggest Critic
 									</Typography>
-									<Typography variant="body2" color="text.secondary">
-										{individualStats.biggestCriticPoints} total votes
-									</Typography>
+									<Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', flexGrow: 1 }}>
+										<Typography variant="h5" color="primary" sx={{ fontWeight: 'bold', textAlign: 'center', mb: 1 }}>
+											{individualStats.biggestCritic?.Name || 'N/A'}
+										</Typography>
+										<Typography variant="body2" color="text.secondary" sx={{ textAlign: 'center' }}>
+											{individualStats.biggestCriticPoints} total votes
+										</Typography>
+									</Box>
 								</CardContent>
 							</Card>
 						</Grid>
 
-						<Grid item xs={12} sm={6} md={4}>
-							<Card>
-								<CardContent>
-									<Typography variant="h6" gutterBottom>Most Compatible With</Typography>
-									<Typography variant="h5" color="primary">
-										{individualStats.mostCompatible?.Name || 'N/A'}
+						<Grid item xs={12} sm={6} md={4} sx={{ display: 'flex', justifyContent: 'center' }}>
+							<Card sx={{ height: '100%', display: 'flex', flexDirection: 'column', width: '100%', maxWidth: { xs: 400, sm: 'none' } }}>
+								<CardContent sx={{ flexGrow: 1, display: 'flex', flexDirection: 'column', justifyContent: 'space-between', minHeight: 140 }}>
+									<Typography variant="h6" gutterBottom sx={{ fontWeight: 'bold', minHeight: { xs: '1.5rem', sm: '2rem' } }}>
+										Most Compatible With
 									</Typography>
-									<Typography variant="body2" color="text.secondary">
-										Based on average points exchanged
-									</Typography>
+									<Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', flexGrow: 1 }}>
+										<Typography variant="h5" color="primary" sx={{ fontWeight: 'bold', textAlign: 'center', mb: 1 }}>
+											{individualStats.mostCompatible?.Name || 'N/A'}
+										</Typography>
+										<Typography variant="body2" color="text.secondary" sx={{ textAlign: 'center' }}>
+											Based on average points exchanged
+										</Typography>
+									</Box>
 								</CardContent>
 							</Card>
 						</Grid>
 
-						<Grid item xs={12} sm={6} md={4}>
-							<Card>
-								<CardContent>
-									<Typography variant="h6" gutterBottom>Most Similar To</Typography>
-									<Typography variant="h5" color="primary">
-										{individualStats.mostSimilar?.Name || 'N/A'}
+						<Grid item xs={12} sm={6} md={4} sx={{ display: 'flex', justifyContent: 'center' }}>
+							<Card sx={{ height: '100%', display: 'flex', flexDirection: 'column', width: '100%', maxWidth: { xs: 400, sm: 'none' } }}>
+								<CardContent sx={{ flexGrow: 1, display: 'flex', flexDirection: 'column', justifyContent: 'space-between', minHeight: 140 }}>
+									<Typography variant="h6" gutterBottom sx={{ fontWeight: 'bold', minHeight: { xs: '1.5rem', sm: '2rem' } }}>
+										Most Similar To
 									</Typography>
-									<Typography variant="body2" color="text.secondary">
-										Based on similarity in voting patterns
-									</Typography>
+									<Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', flexGrow: 1 }}>
+										<Typography variant="h5" color="primary" sx={{ fontWeight: 'bold', textAlign: 'center', mb: 1 }}>
+											{individualStats.mostSimilar?.Name || 'N/A'}
+										</Typography>
+										<Typography variant="body2" color="text.secondary" sx={{ textAlign: 'center' }}>
+											Based on similarity in voting patterns
+										</Typography>
+									</Box>
 								</CardContent>
 							</Card>
 						</Grid>
 
-						<Grid item xs={12} sm={6} md={4}>
-							<Card>
-								<CardContent>
-									<Typography variant="h6" gutterBottom>Avg Song Popularity</Typography>
-									<Typography variant="h4" color="primary">{individualStats.avgPopularity}</Typography>
-									<Typography variant="body2" color="text.secondary">
-										(Spotify popularity scale: 0-100)
+						<Grid item xs={12} sm={6} md={4} sx={{ display: 'flex', justifyContent: 'center' }}>
+							<Card sx={{ height: '100%', display: 'flex', flexDirection: 'column', width: '100%', maxWidth: { xs: 400, sm: 'none' } }}>
+								<CardContent sx={{ flexGrow: 1, display: 'flex', flexDirection: 'column', justifyContent: 'space-between', minHeight: 140 }}>
+									<Typography variant="h6" gutterBottom sx={{ fontWeight: 'bold', minHeight: { xs: '1.5rem', sm: '2rem' } }}>
+										Avg Song Popularity
 									</Typography>
+									<Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', flexGrow: 1 }}>
+										<Typography variant="h4" color="primary" sx={{ fontWeight: 'bold', mb: 1 }}>
+											{individualStats.avgPopularity}
+										</Typography>
+										<Typography variant="body2" color="text.secondary" sx={{ textAlign: 'center' }}>
+											(Spotify popularity scale: 0-100)
+										</Typography>
+									</Box>
 								</CardContent>
 							</Card>
 						</Grid>
 
-						<Grid item xs={12} sm={6} md={4}>
-							<Card>
-								<CardContent>
-									<Typography variant="h6" gutterBottom>Best Performing Song</Typography>
-									<Typography variant="h5" color="primary">
-										{individualStats.bestSong?.Title || 'N/A'}
+						<Grid item xs={12} sm={6} md={4} sx={{ display: 'flex', justifyContent: 'center' }}>
+							<Card sx={{ height: '100%', display: 'flex', flexDirection: 'column', width: '100%', maxWidth: { xs: 400, sm: 'none' } }}>
+								<CardContent sx={{ flexGrow: 1, display: 'flex', flexDirection: 'column', justifyContent: 'space-between', minHeight: 140 }}>
+									<Typography variant="h6" gutterBottom sx={{ fontWeight: 'bold', minHeight: { xs: '1.5rem', sm: '2rem' } }}>
+										Best Performing Song
 									</Typography>
-									<Typography variant="body2">
-										by {individualStats.bestSong?.["Artist(s)"] || 'Unknown'}
-									</Typography>
-									<Typography variant="body2" color="text.secondary">
-										{individualStats.bestSongVotes} total votes
-									</Typography>
+									<Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', flexGrow: 1 }}>
+										<Typography variant="h5" color="primary" sx={{ fontWeight: 'bold', textAlign: 'center', mb: 0.5, fontSize: { xs: '1rem', sm: '1.25rem' } }}>
+											{individualStats.bestSong?.Title || 'N/A'}
+										</Typography>
+										<Typography variant="body2" sx={{ textAlign: 'center', mb: 0.5 }}>
+											by {individualStats.bestSong?.["Artist(s)"] || 'Unknown'}
+										</Typography>
+										<Typography variant="body2" color="text.secondary" sx={{ textAlign: 'center' }}>
+											{individualStats.bestSongVotes} total votes
+										</Typography>
+									</Box>
 								</CardContent>
 							</Card>
 						</Grid>
 
-						<Grid item xs={12} sm={6} md={4}>
-							<Card>
-								<CardContent>
-									<Typography variant="h6" gutterBottom>Voting Speed Rank</Typography>
-									<Typography variant="h4" color="primary">#{individualStats.avgVotingSpeedRank}</Typography>
-									<Typography variant="body2" color="text.secondary">
-										Average position in voting order
+						<Grid item xs={12} sm={6} md={4} sx={{ display: 'flex', justifyContent: 'center' }}>
+							<Card sx={{ height: '100%', display: 'flex', flexDirection: 'column', width: '100%', maxWidth: { xs: 400, sm: 'none' } }}>
+								<CardContent sx={{ flexGrow: 1, display: 'flex', flexDirection: 'column', justifyContent: 'space-between', minHeight: 140 }}>
+									<Typography variant="h6" gutterBottom sx={{ fontWeight: 'bold', minHeight: { xs: '1.5rem', sm: '2rem' } }}>
+										Voting Speed Rank
 									</Typography>
+									<Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', flexGrow: 1 }}>
+										<Typography variant="h4" color="primary" sx={{ fontWeight: 'bold', mb: 1 }}>
+											#{individualStats.avgVotingSpeedRank}
+										</Typography>
+										<Typography variant="body2" color="text.secondary" sx={{ textAlign: 'center' }}>
+											Average position in voting order
+										</Typography>
+									</Box>
 								</CardContent>
 							</Card>
 						</Grid>
