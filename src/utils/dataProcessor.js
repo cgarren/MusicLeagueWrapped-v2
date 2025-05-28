@@ -1,6 +1,40 @@
 import Papa from 'papaparse';
 import { getTracksPopularity, extractTrackIdsFromUris } from './spotifyApi';
 
+// Function to get available seasons dynamically
+export const getAvailableSeasons = async () => {
+	try {
+		// Since we can't directly list directories in the browser, we'll try to fetch each season
+		// and see which ones exist. We'll try seasons 1-10 for now.
+		const maxSeasons = 10;
+		const availableSeasons = [];
+
+		for (let i = 1; i <= maxSeasons; i++) {
+			const seasonId = `season${i}`;
+			try {
+				// Try to fetch the competitors.csv file for this season
+				const response = await fetch(`/data/${seasonId}/competitors.csv`);
+				if (response.ok) {
+					availableSeasons.push({
+						id: seasonId,
+						label: `Season ${i}`,
+						number: i
+					});
+				}
+			} catch (error) {
+				// Season doesn't exist, continue to next
+				continue;
+			}
+		}
+
+		return availableSeasons;
+	} catch (error) {
+		console.error('Error detecting available seasons:', error);
+		// Fallback to just season1 if detection fails
+		return [{ id: 'season1', label: 'Season 1', number: 1 }];
+	}
+};
+
 // Function to load and parse a CSV file
 const loadCSV = async (filePath) => {
 	try {
@@ -753,6 +787,7 @@ export const calculateVotingSimilarity = (votes, submissions, competitors) => {
 
 	// Create a mapping of voter -> round -> submission -> points
 	const votingPatterns = {};
+	const voterRoundCounts = {}; // Track how many rounds each voter participated in
 
 	votes.forEach(vote => {
 		const voterId = vote['Voter ID'];
@@ -760,10 +795,14 @@ export const calculateVotingSimilarity = (votes, submissions, competitors) => {
 		const roundId = submissionToRound[submissionUri];
 		const points = parseInt(vote['Points Assigned'] || 0);
 
-		if (!votingPatterns[voterId]) votingPatterns[voterId] = {};
+		if (!votingPatterns[voterId]) {
+			votingPatterns[voterId] = {};
+			voterRoundCounts[voterId] = new Set();
+		}
 		if (!votingPatterns[voterId][roundId]) votingPatterns[voterId][roundId] = {};
 
 		votingPatterns[voterId][roundId][submissionUri] = points;
+		voterRoundCounts[voterId].add(roundId);
 	});
 
 	// Calculate similarity scores between voters
@@ -786,13 +825,31 @@ export const calculateVotingSimilarity = (votes, submissions, competitors) => {
 			if (processedPairs.has(pairKey)) return;
 			processedPairs.add(pairKey);
 
+			// Get participation counts
+			const roundsA = voterRoundCounts[voterIdA]?.size || 0;
+			const roundsB = voterRoundCounts[voterIdB]?.size || 0;
+
+			// Participation balance safeguard: both players must have participated in at least 3 rounds
+			// and their participation difference shouldn't be more than 50% of the lower count
+			if (roundsA < 3 || roundsB < 3) return;
+
+			const minRounds = Math.min(roundsA, roundsB);
+			const maxRounds = Math.max(roundsA, roundsB);
+			const participationRatio = minRounds / maxRounds;
+
+			// Require at least 60% participation overlap to ensure fair comparison
+			if (participationRatio < 0.6) return;
+
 			let totalDiff = 0;
 			let submissionCount = 0;
+			let roundsCompared = 0;
 
 			// Compare votes in each round
 			Object.keys(votingPatterns[voterIdA] || {}).forEach(roundId => {
 				// Skip if either voter didn't vote in this round
 				if (!votingPatterns[voterIdB] || !votingPatterns[voterIdB][roundId]) return;
+
+				roundsCompared++;
 
 				// Find submissions that both voted on
 				const submissionsA = votingPatterns[voterIdA][roundId];
@@ -808,30 +865,76 @@ export const calculateVotingSimilarity = (votes, submissions, competitors) => {
 				});
 			});
 
-			// Calculate average difference (if they voted on enough common submissions)
-			if (submissionCount >= 5) {
-				const avgDiff = totalDiff / submissionCount;
-				// Similarity is inverse of difference (5 - avgDiff gives a higher score for more similar)
-				const similarity = Math.max(5 - avgDiff, 0);
+			// Enhanced minimum sample size: require at least 10 common votes and 3 common rounds
+			if (submissionCount < 10 || roundsCompared < 3) return;
 
-				similarityScores.push({
-					pairKey,
-					competitor1: competitorA,
-					competitor2: competitorB,
-					similarity,
-					votesCompared: submissionCount,
-					avgDiff: avgDiff.toFixed(2)
-				});
+			// Calculate average difference and handle edge cases
+			const avgDiff = submissionCount > 0 ? totalDiff / submissionCount : 0;
+
+			// Enhanced similarity calculation with safeguards
+			let similarity;
+			if (avgDiff === 0) {
+				// Perfect similarity case - they voted identically on all common songs
+				similarity = 5.0;
+			} else {
+				// Similarity is inverse of difference, capped at 0
+				similarity = Math.max(5 - avgDiff, 0);
 			}
+
+			// Additional safeguard: if similarity is NaN or undefined, skip this pair
+			if (isNaN(similarity) || similarity === undefined) return;
+
+			similarityScores.push({
+				pairKey,
+				competitor1: competitorA,
+				competitor2: competitorB,
+				similarity,
+				votesCompared: submissionCount,
+				roundsCompared,
+				avgDiff: avgDiff.toFixed(2),
+				participationA: roundsA,
+				participationB: roundsB,
+				participationRatio: participationRatio.toFixed(3)
+			});
 		});
 	});
+
+	// If no valid similarity scores were calculated, return empty results
+	if (similarityScores.length === 0) {
+		return {
+			mostSimilar: {
+				competitor1: null,
+				competitor2: null,
+				score: null,
+				votesCompared: null,
+				avgDiff: null,
+				restOfField: [],
+				isTied: false,
+				tiedWinners: null,
+				tiedPairs: null
+			},
+			leastSimilar: {
+				competitor1: null,
+				competitor2: null,
+				score: null,
+				votesCompared: null,
+				avgDiff: null,
+				restOfField: [],
+				isTied: false,
+				tiedWinners: null,
+				tiedPairs: null
+			}
+		};
+	}
 
 	// Sort for most similar (descending)
 	const sortedBySimilarity = [...similarityScores].sort((a, b) => b.similarity - a.similarity);
 
 	// Check for ties in most similar (multiple pairs with the same highest similarity)
 	const highestSimilarity = sortedBySimilarity[0]?.similarity;
-	const tiedMostSimilar = sortedBySimilarity.filter(item => item.similarity === highestSimilarity);
+	const tiedMostSimilar = sortedBySimilarity.filter(item =>
+		Math.abs(item.similarity - highestSimilarity) < 0.01
+	);
 	const isMostSimilarTied = tiedMostSimilar.length > 1;
 
 	// The most similar pair is the first item in the sorted array
@@ -844,7 +947,7 @@ export const calculateVotingSimilarity = (votes, submissions, competitors) => {
 
 	// Rest of the field for most similar (excluding the tied pairs if there's a tie)
 	const mostSimilarRestOfField = isMostSimilarTied
-		? sortedBySimilarity.filter(item => item.similarity !== highestSimilarity).slice(0, 8).map(item => ({
+		? sortedBySimilarity.filter(item => Math.abs(item.similarity - highestSimilarity) >= 0.01).slice(0, 8).map(item => ({
 			name: `${item.competitor1.Name} & ${item.competitor2.Name}`,
 			score: `Similarity: ${item.similarity.toFixed(2)}`
 		}))
@@ -858,7 +961,9 @@ export const calculateVotingSimilarity = (votes, submissions, competitors) => {
 
 	// Check for ties in least similar (multiple pairs with the same lowest similarity)
 	const lowestSimilarity = sortedByDissimilarity[0]?.similarity;
-	const tiedLeastSimilar = sortedByDissimilarity.filter(item => item.similarity === lowestSimilarity);
+	const tiedLeastSimilar = sortedByDissimilarity.filter(item =>
+		Math.abs(item.similarity - lowestSimilarity) < 0.01
+	);
 	const isLeastSimilarTied = tiedLeastSimilar.length > 1;
 
 	// The least similar pair is the first item in the sorted array
@@ -871,7 +976,7 @@ export const calculateVotingSimilarity = (votes, submissions, competitors) => {
 
 	// Rest of the field for least similar (excluding the tied pairs if there's a tie)
 	const leastSimilarRestOfField = isLeastSimilarTied
-		? sortedByDissimilarity.filter(item => item.similarity !== lowestSimilarity).slice(0, 8).map(item => ({
+		? sortedByDissimilarity.filter(item => Math.abs(item.similarity - lowestSimilarity) >= 0.01).slice(0, 8).map(item => ({
 			name: `${item.competitor1.Name} & ${item.competitor2.Name}`,
 			score: `Similarity: ${item.similarity.toFixed(2)}`
 		}))
@@ -1082,8 +1187,8 @@ export const calculateLateVoter = (votes, competitors) => {
 	};
 };
 
-// Calculate the competitor with highest average song popularity (Crowd Pleaser)
-export const calculateCrowdPleaser = (submissions, competitors) => {
+// Calculate the competitor with highest average song popularity (Mainstream)
+export const calculateMainstream = (submissions, competitors) => {
 	// Group submissions by submitter
 	const submissionsBySubmitter = {};
 
@@ -1139,11 +1244,11 @@ export const calculateCrowdPleaser = (submissions, competitors) => {
 	const restOfField = isTied
 		? competitorsWithAvgPopularity.filter(item => item.avgPopularity !== highestAvg).map(item => ({
 			name: item.competitor.Name,
-			score: `${item.avgPopularity.toFixed(1)} / 100`
+			score: `${item.avgPopularity.toFixed(1)}`
 		}))
 		: competitorsWithAvgPopularity.slice(1).map(item => ({
 			name: item.competitor.Name,
-			score: `${item.avgPopularity.toFixed(1)} / 100`
+			score: `${item.avgPopularity.toFixed(1)}`
 		}));
 
 	return {
@@ -1213,17 +1318,727 @@ export const calculateTrendSetter = (submissions, competitors) => {
 	const restOfField = isTied
 		? competitorsWithAvgPopularity.filter(item => item.avgPopularity !== lowestAvg).map(item => ({
 			name: item.competitor.Name,
-			score: `${item.avgPopularity.toFixed(1)} / 100`
+			score: `${item.avgPopularity.toFixed(1)}`
 		}))
 		: competitorsWithAvgPopularity.slice(1).map(item => ({
 			name: item.competitor.Name,
-			score: `${item.avgPopularity.toFixed(1)} / 100`
+			score: `${item.avgPopularity.toFixed(1)}`
 		}));
 
 	return {
 		competitor: winner?.competitor,
 		avgPopularity: winner?.avgPopularity.toFixed(1),
 		submissionCount: winner?.submissionCount,
+		restOfField,
+		isTied,
+		tiedWinners: tiedWinnersNames
+	};
+};
+
+// Calculate the competitor who spreads their points most evenly (Vote Spreader)
+export const calculateVoteSpreader = (votes, competitors) => {
+	// Group individual points by voter (each point counts as a separate vote)
+	const individualVotesByVoter = {};
+
+	votes.forEach(vote => {
+		const voterId = vote['Voter ID'];
+		const points = parseInt(vote['Points Assigned'] || 0);
+
+		if (!individualVotesByVoter[voterId]) {
+			individualVotesByVoter[voterId] = [];
+		}
+
+		// Add individual points as separate votes
+		// For example, if someone gives 3 points, add three 1-point votes
+		for (let i = 0; i < points; i++) {
+			individualVotesByVoter[voterId].push(1);
+		}
+	});
+
+	// Calculate standard deviation for each voter (lower = more even distribution)
+	const competitorsWithSpreadScores = [];
+
+	Object.entries(individualVotesByVoter).forEach(([voterId, voterPoints]) => {
+		// Only consider voters with enough votes (at least 30 individual votes)
+		if (voterPoints.length >= 30) {
+			// Calculate mean (should be 1 since each individual vote is worth 1 point)
+			const mean = voterPoints.reduce((sum, points) => sum + points, 0) / voterPoints.length;
+
+			// Calculate standard deviation (should be 0 for perfectly even distribution)
+			const variance = voterPoints.reduce((sum, points) => sum + Math.pow(points - mean, 2), 0) / voterPoints.length;
+			const standardDeviation = Math.sqrt(variance);
+
+			// For this metric, we want to measure how evenly they distribute their ORIGINAL votes
+			// So let's recalculate using the original vote values
+			const originalVotes = [];
+			votes.forEach(vote => {
+				if (vote['Voter ID'] === voterId) {
+					originalVotes.push(parseInt(vote['Points Assigned'] || 0));
+				}
+			});
+
+			if (originalVotes.length >= 10) {
+				const originalMean = originalVotes.reduce((sum, points) => sum + points, 0) / originalVotes.length;
+				const originalVariance = originalVotes.reduce((sum, points) => sum + Math.pow(points - originalMean, 2), 0) / originalVotes.length;
+				const originalStandardDeviation = Math.sqrt(originalVariance);
+
+				// Lower standard deviation = more even distribution
+				// We'll use the inverse for scoring (higher score = more even)
+				const spreadScore = 1 / (originalStandardDeviation + 0.1); // Add 0.1 to avoid division by zero
+
+				const competitor = competitors.find(comp => comp.ID === voterId);
+				if (competitor) {
+					competitorsWithSpreadScores.push({
+						competitor,
+						spreadScore,
+						standardDeviation: originalStandardDeviation,
+						meanPoints: originalMean,
+						totalVotes: voterPoints.length // This is now the total individual votes given
+					});
+				}
+			}
+		}
+	});
+
+	// Sort by spread score (highest first = most even distribution)
+	competitorsWithSpreadScores.sort((a, b) => b.spreadScore - a.spreadScore);
+
+	// Check for ties (multiple competitors with the same spread score)
+	const highestSpreadScore = competitorsWithSpreadScores[0]?.spreadScore;
+	const tiedWinners = competitorsWithSpreadScores.filter(item =>
+		Math.abs(item.spreadScore - highestSpreadScore) < 0.01 // Small tolerance for floating point comparison
+	);
+	const isTied = tiedWinners.length > 1;
+
+	// The winner is the first item in the sorted array
+	const winner = competitorsWithSpreadScores[0];
+
+	// Get tied winners' names if there's a tie
+	const tiedWinnersNames = isTied ? tiedWinners.map(item => item.competitor.Name) : null;
+
+	// Rest of the field (excluding tied winners if there's a tie)
+	const restOfField = isTied
+		? competitorsWithSpreadScores.filter(item =>
+			Math.abs(item.spreadScore - highestSpreadScore) >= 0.01
+		).map(item => ({
+			name: item.competitor.Name,
+			score: `Std Dev: ${item.standardDeviation.toFixed(2)} (${item.totalVotes} votes)`
+		}))
+		: competitorsWithSpreadScores.slice(1).map(item => ({
+			name: item.competitor.Name,
+			score: `Std Dev: ${item.standardDeviation.toFixed(2)} (${item.totalVotes} votes)`
+		}));
+
+	return {
+		competitor: winner?.competitor,
+		standardDeviation: winner?.standardDeviation.toFixed(2),
+		meanPoints: winner?.meanPoints.toFixed(2),
+		totalVotes: winner?.totalVotes,
+		restOfField,
+		isTied,
+		tiedWinners: tiedWinnersNames
+	};
+};
+
+// Calculate the competitor who gives the most zero-point votes (Zero-Vote Giver)
+export const calculateZeroVoteGiver = (votes, competitors) => {
+	// Count zero votes and total individual votes by voter
+	const zeroVotesByVoter = {};
+	const totalIndividualVotesByVoter = {};
+
+	votes.forEach(vote => {
+		const voterId = vote['Voter ID'];
+		const points = parseInt(vote['Points Assigned'] || 0);
+
+		// Initialize counters
+		if (!zeroVotesByVoter[voterId]) zeroVotesByVoter[voterId] = 0;
+		if (!totalIndividualVotesByVoter[voterId]) totalIndividualVotesByVoter[voterId] = 0;
+
+		// Count total individual votes (each point counts as one vote)
+		totalIndividualVotesByVoter[voterId] += points;
+
+		// Count zero votes (each zero-point submission counts as zero votes, so no change needed)
+		if (points === 0) {
+			zeroVotesByVoter[voterId]++;
+		}
+	});
+
+	// Calculate zero vote percentages for competitors with enough votes
+	const competitorsWithZeroVoteStats = [];
+
+	Object.entries(zeroVotesByVoter).forEach(([voterId, zeroCount]) => {
+		const totalIndividualVotes = totalIndividualVotesByVoter[voterId];
+
+		// Only consider voters with at least 30 individual votes
+		if (totalIndividualVotes >= 30) {
+			// For percentage calculation, we need to consider that zero votes don't contribute to total
+			// So we calculate: zero submissions / (zero submissions + individual votes given)
+			const totalSubmissionsVotedOn = zeroCount + totalIndividualVotes;
+			const zeroPercentage = (zeroCount / totalSubmissionsVotedOn) * 100;
+
+			const competitor = competitors.find(comp => comp.ID === voterId);
+
+			if (competitor) {
+				competitorsWithZeroVoteStats.push({
+					competitor,
+					zeroCount,
+					totalIndividualVotes,
+					totalSubmissionsVotedOn,
+					zeroPercentage
+				});
+			}
+		}
+	});
+
+	// Sort by zero vote count (descending)
+	competitorsWithZeroVoteStats.sort((a, b) => b.zeroCount - a.zeroCount);
+
+	// Check for ties (multiple competitors with the same zero vote count)
+	const highestZeroCount = competitorsWithZeroVoteStats[0]?.zeroCount;
+	const tiedWinners = competitorsWithZeroVoteStats.filter(item => item.zeroCount === highestZeroCount);
+	const isTied = tiedWinners.length > 1;
+
+	// The winner is the first item in the sorted array
+	const winner = competitorsWithZeroVoteStats[0];
+
+	// Get tied winners' names if there's a tie
+	const tiedWinnersNames = isTied ? tiedWinners.map(item => item.competitor.Name) : null;
+
+	// Rest of the field (excluding tied winners if there's a tie)
+	const restOfField = isTied
+		? competitorsWithZeroVoteStats.filter(item => item.zeroCount !== highestZeroCount).map(item => ({
+			name: item.competitor.Name,
+			score: `${item.zeroCount} zero votes (${item.zeroPercentage.toFixed(1)}% of ${item.totalSubmissionsVotedOn} submissions)`
+		}))
+		: competitorsWithZeroVoteStats.slice(1).map(item => ({
+			name: item.competitor.Name,
+			score: `${item.zeroCount} zero votes (${item.zeroPercentage.toFixed(1)}% of ${item.totalSubmissionsVotedOn} submissions)`
+		}));
+
+	return {
+		competitor: winner?.competitor,
+		zeroCount: winner?.zeroCount,
+		totalVotes: winner?.totalIndividualVotes,
+		totalSubmissionsVotedOn: winner?.totalSubmissionsVotedOn,
+		zeroPercentage: winner?.zeroPercentage.toFixed(1),
+		restOfField,
+		isTied,
+		tiedWinners: tiedWinnersNames
+	};
+};
+
+// Calculate the competitor who gives the most maximum-point votes (Max-Vote Giver)
+export const calculateMaxVoteGiver = (votes, competitors, submissions) => {
+	// Create a map of Spotify URIs to song details
+	const submissionDetails = {};
+	submissions.forEach(submission => {
+		submissionDetails[submission['Spotify URI']] = {
+			title: submission['Title'],
+			artist: submission['Artist(s)'],
+			submitterId: submission['Submitter ID']
+		};
+	});
+
+	// Group votes by voter and round
+	const votesByVoterAndRound = {};
+
+	votes.forEach(vote => {
+		const voterId = vote['Voter ID'];
+		const roundId = vote['Round ID'];
+		const points = parseInt(vote['Points Assigned'] || 0);
+
+		if (!votesByVoterAndRound[voterId]) {
+			votesByVoterAndRound[voterId] = {};
+		}
+		if (!votesByVoterAndRound[voterId][roundId]) {
+			votesByVoterAndRound[voterId][roundId] = [];
+		}
+
+		votesByVoterAndRound[voterId][roundId].push({
+			points,
+			submissionUri: vote['Spotify URI']
+		});
+	});
+
+	// Calculate "all-in" rounds for each voter
+	const competitorsWithAllInStats = [];
+
+	Object.entries(votesByVoterAndRound).forEach(([voterId, roundVotes]) => {
+		const competitor = competitors.find(comp => comp.ID === voterId);
+		if (!competitor) return;
+
+		const rounds = Object.keys(roundVotes);
+
+		// Only consider voters who participated in at least 3 rounds
+		if (rounds.length < 3) return;
+
+		let allInRounds = 0;
+		const allInExamples = []; // Store examples of all-in votes
+
+		rounds.forEach(roundId => {
+			const votesInRound = roundVotes[roundId];
+
+			// Calculate total points available in this round
+			const totalPointsInRound = votesInRound.reduce((sum, vote) => sum + vote.points, 0);
+
+			// Skip rounds where no points were assigned
+			if (totalPointsInRound === 0) return;
+
+			// Check if all points went to a single submission
+			const pointsBySubmission = {};
+			votesInRound.forEach(vote => {
+				if (!pointsBySubmission[vote.submissionUri]) {
+					pointsBySubmission[vote.submissionUri] = 0;
+				}
+				pointsBySubmission[vote.submissionUri] += vote.points;
+			});
+
+			// Find the maximum points given to any single submission
+			const maxPointsToSingleSubmission = Math.max(...Object.values(pointsBySubmission));
+
+			// If all points went to one submission, count it as an "all-in" round
+			if (maxPointsToSingleSubmission === totalPointsInRound) {
+				allInRounds++;
+
+				// Find which submission got all the votes
+				const allInSubmissionUri = Object.keys(pointsBySubmission).find(
+					uri => pointsBySubmission[uri] === totalPointsInRound
+				);
+
+				// Store example with song details
+				if (allInSubmissionUri && submissionDetails[allInSubmissionUri]) {
+					const songInfo = submissionDetails[allInSubmissionUri];
+					allInExamples.push({
+						roundId,
+						points: totalPointsInRound,
+						songTitle: songInfo.title,
+						songArtist: songInfo.artist,
+						submissionUri: allInSubmissionUri
+					});
+				}
+			}
+		});
+
+		const allInPercentage = (allInRounds / rounds.length) * 100;
+
+		competitorsWithAllInStats.push({
+			competitor,
+			allInRounds,
+			totalRounds: rounds.length,
+			allInPercentage,
+			allInExamples // Include examples of all-in votes
+		});
+	});
+
+	// Sort by all-in percentage (descending), then by number of all-in rounds
+	competitorsWithAllInStats.sort((a, b) => {
+		if (Math.abs(a.allInPercentage - b.allInPercentage) < 0.1) {
+			return b.allInRounds - a.allInRounds;
+		}
+		return b.allInPercentage - a.allInPercentage;
+	});
+
+	// Check for ties (multiple competitors with the same all-in percentage)
+	const highestPercentage = competitorsWithAllInStats[0]?.allInPercentage;
+	const tiedWinners = competitorsWithAllInStats.filter(item =>
+		Math.abs(item.allInPercentage - highestPercentage) < 0.1
+	);
+	const isTied = tiedWinners.length > 1;
+
+	// The winner is the first item in the sorted array
+	const winner = competitorsWithAllInStats[0];
+
+	// Get tied winners' names if there's a tie
+	const tiedWinnersNames = isTied ? tiedWinners.map(item => item.competitor.Name) : null;
+
+	// Rest of the field (excluding tied winners if there's a tie)
+	const restOfField = isTied
+		? competitorsWithAllInStats.filter(item =>
+			Math.abs(item.allInPercentage - highestPercentage) >= 0.1
+		).map(item => ({
+			name: item.competitor.Name,
+			score: `${item.allInRounds}/${item.totalRounds} rounds (${item.allInPercentage.toFixed(1)}%)`
+		}))
+		: competitorsWithAllInStats.slice(1).map(item => ({
+			name: item.competitor.Name,
+			score: `${item.allInRounds}/${item.totalRounds} rounds (${item.allInPercentage.toFixed(1)}%)`
+		}));
+
+	return {
+		competitor: winner?.competitor,
+		allInRounds: winner?.allInRounds,
+		totalRounds: winner?.totalRounds,
+		allInPercentage: winner?.allInPercentage?.toFixed(1),
+		allInExamples: winner?.allInExamples || [], // Include examples for the winner
+		restOfField,
+		isTied,
+		tiedWinners: tiedWinnersNames,
+		tiedWinnersData: isTied ? tiedWinners : null // Include full data for tied winners
+	};
+};
+
+// Calculate the competitor with the biggest comeback (Comeback Kid)
+export const calculateComebackKid = (votes, submissions, competitors, rounds) => {
+	// Group submissions by submitter and round
+	const submissionsBySubmitterAndRound = {};
+	const submissionData = {};
+
+	submissions.forEach(submission => {
+		const submitterId = submission['Submitter ID'];
+		const roundId = submission['Round ID'];
+		const spotifyUri = submission['Spotify URI'];
+
+		if (!submissionsBySubmitterAndRound[submitterId]) {
+			submissionsBySubmitterAndRound[submitterId] = {};
+		}
+		submissionsBySubmitterAndRound[submitterId][roundId] = spotifyUri;
+
+		submissionData[spotifyUri] = {
+			submitterId,
+			roundId,
+			title: submission['Title'],
+			artist: submission['Artist(s)']
+		};
+	});
+
+	// Calculate scores for each submission
+	const scoresBySubmission = {};
+	votes.forEach(vote => {
+		const spotifyUri = vote['Spotify URI'];
+		const points = parseInt(vote['Points Assigned'] || 0);
+
+		if (!scoresBySubmission[spotifyUri]) {
+			scoresBySubmission[spotifyUri] = 0;
+		}
+		scoresBySubmission[spotifyUri] += points;
+	});
+
+	// Calculate comeback scores for each competitor
+	const comebackScores = [];
+
+	Object.entries(submissionsBySubmitterAndRound).forEach(([submitterId, roundSubmissions]) => {
+		const competitor = competitors.find(comp => comp.ID === submitterId);
+		if (!competitor) return;
+
+		// Get all rounds this competitor participated in
+		const participatedRounds = Object.keys(roundSubmissions);
+
+		// Need at least 3 rounds to calculate a meaningful comeback
+		if (participatedRounds.length < 3) return;
+
+		// Sort rounds by their actual order (using the order they appear in the rounds array/CSV)
+		const roundsWithOrder = participatedRounds.map(roundId => {
+			const round = rounds.find(r => r.ID === roundId);
+			// Find the index of this round in the original rounds array (CSV order)
+			const roundIndex = rounds.findIndex(r => r.ID === roundId);
+			return {
+				roundId,
+				round,
+				// Use the index in the rounds array for proper chronological ordering
+				order: roundIndex >= 0 ? roundIndex : 999 // Put unknown rounds at the end
+			};
+		}).sort((a, b) => {
+			// Sort by the order they appear in the rounds array (CSV order)
+			return a.order - b.order;
+		});
+
+		// Calculate scores for each round in chronological order
+		const roundScores = roundsWithOrder.map((roundInfo, index) => {
+			const submissionUri = roundSubmissions[roundInfo.roundId];
+			return {
+				roundId: roundInfo.roundId,
+				score: scoresBySubmission[submissionUri] || 0,
+				submissionUri,
+				chronologicalIndex: index // Track the chronological position
+			};
+		});
+
+		// Find the best comeback by checking each potential low point
+		let bestComeback = null;
+		let bestComebackMagnitude = 0;
+
+		roundScores.forEach((lowRound, lowIndex) => {
+			// Look for the best score that comes AFTER this low point chronologically
+			let bestSubsequentScore = lowRound.score;
+			let bestSubsequentRoundIndex = lowIndex;
+
+			for (let i = lowIndex + 1; i < roundScores.length; i++) {
+				if (roundScores[i].score > bestSubsequentScore) {
+					bestSubsequentScore = roundScores[i].score;
+					bestSubsequentRoundIndex = i;
+				}
+			}
+
+			// Calculate comeback magnitude for this potential low point
+			const comebackMagnitude = bestSubsequentScore - lowRound.score;
+
+			// Update best comeback if this is better and meaningful (at least 5 points)
+			if (comebackMagnitude >= 5 && comebackMagnitude > bestComebackMagnitude) {
+				const lowestRound = rounds.find(r => r.ID === roundScores[lowIndex].roundId);
+				const bestRound = rounds.find(r => r.ID === roundScores[bestSubsequentRoundIndex].roundId);
+				const lowestSubmission = submissionData[roundScores[lowIndex].submissionUri];
+				const bestSubmission = submissionData[roundScores[bestSubsequentRoundIndex].submissionUri];
+
+				bestComeback = {
+					competitor,
+					comebackMagnitude,
+					lowestScore: lowRound.score,
+					bestSubsequentScore,
+					lowestRound,
+					bestRound,
+					lowestSubmission,
+					bestSubmission,
+					roundsParticipated: participatedRounds.length,
+					lowRoundIndex: lowIndex,
+					bestRoundIndex: bestSubsequentRoundIndex
+				};
+				bestComebackMagnitude = comebackMagnitude;
+			}
+		});
+
+		// Add the best comeback for this competitor if one was found
+		if (bestComeback) {
+			comebackScores.push(bestComeback);
+		}
+	});
+
+	// Sort by comeback magnitude (descending)
+	comebackScores.sort((a, b) => b.comebackMagnitude - a.comebackMagnitude);
+
+	// Check for ties (multiple competitors with the same comeback magnitude)
+	const highestComeback = comebackScores[0]?.comebackMagnitude;
+	const tiedWinners = comebackScores.filter(item => item.comebackMagnitude === highestComeback);
+	const isTied = tiedWinners.length > 1;
+
+	// The winner is the first item in the sorted array
+	const winner = comebackScores[0];
+
+	// Get tied winners' names if there's a tie
+	const tiedWinnersNames = isTied ? tiedWinners.map(item => item.competitor.Name) : null;
+
+	// Rest of the field (excluding tied winners if there's a tie)
+	const restOfField = isTied
+		? comebackScores.filter(item => item.comebackMagnitude !== highestComeback).map(item => ({
+			name: item.competitor.Name,
+			score: `+${item.comebackMagnitude} points (${item.lowestScore} → ${item.bestSubsequentScore})`
+		}))
+		: comebackScores.slice(1).map(item => ({
+			name: item.competitor.Name,
+			score: `+${item.comebackMagnitude} points (${item.lowestScore} → ${item.bestSubsequentScore})`
+		}));
+
+	return {
+		competitor: winner?.competitor,
+		comebackMagnitude: winner?.comebackMagnitude,
+		lowestScore: winner?.lowestScore,
+		bestSubsequentScore: winner?.bestSubsequentScore,
+		lowestRound: winner?.lowestRound,
+		bestRound: winner?.bestRound,
+		lowestSubmission: winner?.lowestSubmission,
+		bestSubmission: winner?.bestSubmission,
+		restOfField,
+		isTied,
+		tiedWinners: tiedWinnersNames,
+		tiedComebacks: isTied ? tiedWinners : null
+	};
+};
+
+// Calculate the competitor who missed the most rounds of voting (Doesn't Often Vote)
+export const calculateDoesntVote = (votes, competitors, rounds) => {
+	// Filter out any empty or invalid rounds (Papa Parse sometimes includes empty rows)
+	const validRounds = rounds.filter(round => round && round.ID && round.ID.trim() !== '');
+
+	// Count rounds each competitor participated in
+	const roundsParticipatedByCompetitor = {};
+
+	votes.forEach(vote => {
+		const voterId = vote['Voter ID'];
+		const roundId = vote['Round ID'];
+
+		if (!roundsParticipatedByCompetitor[voterId]) {
+			roundsParticipatedByCompetitor[voterId] = new Set();
+		}
+		roundsParticipatedByCompetitor[voterId].add(roundId);
+	});
+
+	// Calculate missed rounds for each competitor
+	const competitorsWithMissedRounds = [];
+	const totalRounds = validRounds.length;
+
+	competitors.forEach(competitor => {
+		// Validate that the competitor has required properties
+		if (!competitor || !competitor.ID || !competitor.Name || competitor.Name.trim() === '') {
+			return; // Skip invalid competitors
+		}
+
+		const competitorId = competitor.ID;
+		const roundsParticipated = roundsParticipatedByCompetitor[competitorId]?.size || 0;
+		const roundsMissed = totalRounds - roundsParticipated;
+
+		// Only consider competitors who missed at least 1 round
+		if (roundsMissed > 0) {
+			competitorsWithMissedRounds.push({
+				competitor,
+				roundsMissed,
+				roundsParticipated,
+				totalRounds,
+				missedPercentage: (roundsMissed / totalRounds) * 100
+			});
+		}
+	});
+
+	// If no valid competitors with missed rounds, return empty result
+	if (competitorsWithMissedRounds.length === 0) {
+		return {
+			competitor: null,
+			roundsMissed: null,
+			roundsParticipated: null,
+			totalRounds: totalRounds,
+			missedPercentage: null,
+			restOfField: [],
+			isTied: false,
+			tiedWinners: null
+		};
+	}
+
+	// Sort by rounds missed (descending)
+	competitorsWithMissedRounds.sort((a, b) => b.roundsMissed - a.roundsMissed);
+
+	// Check for ties (multiple competitors with the same number of missed rounds)
+	const highestMissed = competitorsWithMissedRounds[0]?.roundsMissed;
+	const tiedWinners = competitorsWithMissedRounds.filter(item => item.roundsMissed === highestMissed);
+	const isTied = tiedWinners.length > 1;
+
+	// The winner is the first item in the sorted array
+	const winner = competitorsWithMissedRounds[0];
+
+	// Additional validation for the winner
+	if (!winner || !winner.competitor || !winner.competitor.Name) {
+		return {
+			competitor: null,
+			roundsMissed: null,
+			roundsParticipated: null,
+			totalRounds: totalRounds,
+			missedPercentage: null,
+			restOfField: [],
+			isTied: false,
+			tiedWinners: null
+		};
+	}
+
+	// Get tied winners' names if there's a tie - with validation
+	const tiedWinnersNames = isTied ? tiedWinners
+		.filter(item => item.competitor && item.competitor.Name) // Filter out invalid names
+		.map(item => item.competitor.Name) : null;
+
+	// Rest of the field (excluding tied winners if there's a tie) - with validation
+	const restOfField = isTied
+		? competitorsWithMissedRounds
+			.filter(item => item.roundsMissed !== highestMissed && item.competitor && item.competitor.Name)
+			.map(item => ({
+				name: item.competitor.Name,
+				score: `${item.roundsMissed}/${item.totalRounds} rounds missed (${item.missedPercentage.toFixed(1)}%)`
+			}))
+		: competitorsWithMissedRounds
+			.slice(1)
+			.filter(item => item.competitor && item.competitor.Name)
+			.map(item => ({
+				name: item.competitor.Name,
+				score: `${item.roundsMissed}/${item.totalRounds} rounds missed (${item.missedPercentage.toFixed(1)}%)`
+			}));
+
+	return {
+		competitor: winner.competitor,
+		roundsMissed: winner.roundsMissed,
+		roundsParticipated: winner.roundsParticipated,
+		totalRounds: winner.totalRounds,
+		missedPercentage: winner.missedPercentage?.toFixed(1),
+		restOfField,
+		isTied,
+		tiedWinners: tiedWinnersNames
+	};
+};
+
+// Calculate the competitor who gives the most single-point votes (Single-Vote Giver)
+export const calculateSingleVoteGiver = (votes, competitors) => {
+	// Count single votes and total individual votes by voter
+	const singleVotesByVoter = {};
+	const totalIndividualVotesByVoter = {};
+
+	votes.forEach(vote => {
+		const voterId = vote['Voter ID'];
+		const points = parseInt(vote['Points Assigned'] || 0);
+
+		// Initialize counters
+		if (!singleVotesByVoter[voterId]) singleVotesByVoter[voterId] = 0;
+		if (!totalIndividualVotesByVoter[voterId]) totalIndividualVotesByVoter[voterId] = 0;
+
+		// Count total individual votes (each point counts as one vote)
+		totalIndividualVotesByVoter[voterId] += points;
+
+		// Count single votes (exactly 1 point given to a submission)
+		if (points === 1) {
+			singleVotesByVoter[voterId]++;
+		}
+	});
+
+	// Calculate single vote percentages for competitors with enough votes
+	const competitorsWithSingleVoteStats = [];
+
+	Object.entries(singleVotesByVoter).forEach(([voterId, singleCount]) => {
+		const totalIndividualVotes = totalIndividualVotesByVoter[voterId];
+
+		// Only consider voters with at least 30 individual votes
+		if (totalIndividualVotes >= 30) {
+			const singlePercentage = (singleCount / totalIndividualVotes) * 100;
+
+			const competitor = competitors.find(comp => comp.ID === voterId);
+
+			if (competitor) {
+				competitorsWithSingleVoteStats.push({
+					competitor,
+					singleCount,
+					totalIndividualVotes,
+					singlePercentage
+				});
+			}
+		}
+	});
+
+	// Sort by single vote percentage (descending)
+	competitorsWithSingleVoteStats.sort((a, b) => b.singlePercentage - a.singlePercentage);
+
+	// Check for ties (multiple competitors with the same single vote percentage)
+	const highestSinglePercentage = competitorsWithSingleVoteStats[0]?.singlePercentage;
+	const tiedWinners = competitorsWithSingleVoteStats.filter(item =>
+		Math.abs(item.singlePercentage - highestSinglePercentage) < 0.1
+	);
+	const isTied = tiedWinners.length > 1;
+
+	// The winner is the first item in the sorted array
+	const winner = competitorsWithSingleVoteStats[0];
+
+	// Get tied winners' names if there's a tie
+	const tiedWinnersNames = isTied ? tiedWinners.map(item => item.competitor.Name) : null;
+
+	// Rest of the field (excluding tied winners if there's a tie)
+	const restOfField = isTied
+		? competitorsWithSingleVoteStats.filter(item =>
+			Math.abs(item.singlePercentage - highestSinglePercentage) >= 0.1
+		).map(item => ({
+			name: item.competitor.Name,
+			score: `${item.singleCount} single votes (${item.singlePercentage.toFixed(1)}% of ${item.totalIndividualVotes} total votes)`
+		}))
+		: competitorsWithSingleVoteStats.slice(1).map(item => ({
+			name: item.competitor.Name,
+			score: `${item.singleCount} single votes (${item.singlePercentage.toFixed(1)}% of ${item.totalIndividualVotes} total votes)`
+		}));
+
+	return {
+		competitor: winner?.competitor,
+		singleCount: winner?.singleCount,
+		totalVotes: winner?.totalIndividualVotes,
+		singlePercentage: winner?.singlePercentage?.toFixed(1),
 		restOfField,
 		isTied,
 		tiedWinners: tiedWinnersNames
@@ -1245,8 +2060,13 @@ export const calculateAllSuperlatives = (data) => {
 	const similarity = calculateVotingSimilarity(votes, submissions, competitors);
 	const earlyVoter = calculateEarlyVoter(votes, competitors);
 	const lateVoter = calculateLateVoter(votes, competitors);
-	const crowdPleaser = calculateCrowdPleaser(submissions, competitors);
+	const mainstream = calculateMainstream(submissions, competitors);
 	const trendSetter = calculateTrendSetter(submissions, competitors);
+	const voteSpreader = calculateVoteSpreader(votes, competitors);
+	const singleVoteGiver = calculateSingleVoteGiver(votes, competitors);
+	const maxVoteGiver = calculateMaxVoteGiver(votes, competitors, submissions);
+	const comebackKid = calculateComebackKid(votes, submissions, competitors, rounds);
+	const doesntVote = calculateDoesntVote(votes, competitors, rounds);
 
 	return {
 		mostPopular,
@@ -1255,6 +2075,7 @@ export const calculateAllSuperlatives = (data) => {
 		bestPerformance,
 		longestComment,
 		mostComments,
+
 		compatibility: {
 			mostCompatible,
 			leastCompatible
@@ -1265,8 +2086,13 @@ export const calculateAllSuperlatives = (data) => {
 			lateVoter
 		},
 		spotify: {
-			crowdPleaser,
+			mainstream,
 			trendSetter
-		}
+		},
+		voteSpreader,
+		singleVoteGiver,
+		maxVoteGiver,
+		comebackKid,
+		doesntVote
 	};
-}; 
+};

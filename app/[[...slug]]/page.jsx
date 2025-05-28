@@ -4,6 +4,7 @@ import { ClientOnly } from "./client";
 export function generateStaticParams() {
     return [
         { slug: [""] },
+        { slug: ["suit-and-tie"] },
         { slug: [".well-known", "appspecific", "com.chrome.devtools.json"] },
     ];
 }
