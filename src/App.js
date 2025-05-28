@@ -3,6 +3,7 @@ import { ThemeProvider, createTheme } from '@mui/material/styles';
 import CssBaseline from '@mui/material/CssBaseline';
 import { Box } from '@mui/material';
 import Dashboard from './components/Dashboard';
+import UploadDashboard from './components/UploadDashboard';
 import Header from './components/Header';
 import Footer from './components/Footer';
 
@@ -30,6 +31,12 @@ const theme = createTheme({
 });
 
 function App() {
+	// Get the current path to determine which component to render
+	const currentPath = typeof window !== 'undefined' ? window.location.pathname : '/';
+
+	// Determine which dashboard to show based on the path
+	const isPreloadedData = currentPath === '/suit-and-tie';
+
 	return (
 		<ThemeProvider theme={theme}>
 			<CssBaseline />
@@ -40,7 +47,7 @@ function App() {
 			}}>
 				<Header />
 				<Box component="main" sx={{ flexGrow: 1 }}>
-					<Dashboard />
+					{isPreloadedData ? <Dashboard /> : <UploadDashboard />}
 				</Box>
 				<Footer />
 			</Box>
