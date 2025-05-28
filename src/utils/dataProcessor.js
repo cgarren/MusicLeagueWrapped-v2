@@ -1528,7 +1528,17 @@ export const calculateZeroVoteGiver = (votes, competitors) => {
 };
 
 // Calculate the competitor who gives the most maximum-point votes (Max-Vote Giver)
-export const calculateMaxVoteGiver = (votes, competitors) => {
+export const calculateMaxVoteGiver = (votes, competitors, submissions) => {
+	// Create a map of Spotify URIs to song details
+	const submissionDetails = {};
+	submissions.forEach(submission => {
+		submissionDetails[submission['Spotify URI']] = {
+			title: submission['Title'],
+			artist: submission['Artist(s)'],
+			submitterId: submission['Submitter ID']
+		};
+	});
+
 	// Group votes by voter and round
 	const votesByVoterAndRound = {};
 
@@ -1563,6 +1573,7 @@ export const calculateMaxVoteGiver = (votes, competitors) => {
 		if (rounds.length < 3) return;
 
 		let allInRounds = 0;
+		const allInExamples = []; // Store examples of all-in votes
 
 		rounds.forEach(roundId => {
 			const votesInRound = roundVotes[roundId];
@@ -1588,6 +1599,23 @@ export const calculateMaxVoteGiver = (votes, competitors) => {
 			// If all points went to one submission, count it as an "all-in" round
 			if (maxPointsToSingleSubmission === totalPointsInRound) {
 				allInRounds++;
+
+				// Find which submission got all the votes
+				const allInSubmissionUri = Object.keys(pointsBySubmission).find(
+					uri => pointsBySubmission[uri] === totalPointsInRound
+				);
+
+				// Store example with song details
+				if (allInSubmissionUri && submissionDetails[allInSubmissionUri]) {
+					const songInfo = submissionDetails[allInSubmissionUri];
+					allInExamples.push({
+						roundId,
+						points: totalPointsInRound,
+						songTitle: songInfo.title,
+						songArtist: songInfo.artist,
+						submissionUri: allInSubmissionUri
+					});
+				}
 			}
 		});
 
@@ -1597,7 +1625,8 @@ export const calculateMaxVoteGiver = (votes, competitors) => {
 			competitor,
 			allInRounds,
 			totalRounds: rounds.length,
-			allInPercentage
+			allInPercentage,
+			allInExamples // Include examples of all-in votes
 		});
 	});
 
@@ -1640,9 +1669,11 @@ export const calculateMaxVoteGiver = (votes, competitors) => {
 		allInRounds: winner?.allInRounds,
 		totalRounds: winner?.totalRounds,
 		allInPercentage: winner?.allInPercentage?.toFixed(1),
+		allInExamples: winner?.allInExamples || [], // Include examples for the winner
 		restOfField,
 		isTied,
-		tiedWinners: tiedWinnersNames
+		tiedWinners: tiedWinnersNames,
+		tiedWinnersData: isTied ? tiedWinners : null // Include full data for tied winners
 	};
 };
 
@@ -2033,7 +2064,7 @@ export const calculateAllSuperlatives = (data) => {
 	const trendSetter = calculateTrendSetter(submissions, competitors);
 	const voteSpreader = calculateVoteSpreader(votes, competitors);
 	const singleVoteGiver = calculateSingleVoteGiver(votes, competitors);
-	const maxVoteGiver = calculateMaxVoteGiver(votes, competitors);
+	const maxVoteGiver = calculateMaxVoteGiver(votes, competitors, submissions);
 	const comebackKid = calculateComebackKid(votes, submissions, competitors, rounds);
 	const doesntVote = calculateDoesntVote(votes, competitors, rounds);
 

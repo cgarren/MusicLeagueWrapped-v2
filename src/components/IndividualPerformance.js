@@ -1,16 +1,21 @@
 import React, { useState, useEffect } from 'react';
-import { Box, Typography, FormControl, InputLabel, Select, MenuItem, Paper, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Grid, Card, CardContent } from '@mui/material';
+import { Box, Typography, FormControl, InputLabel, Select, MenuItem, Paper, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Grid, Card, CardContent, useTheme, useMediaQuery } from '@mui/material';
+import { ScatterChart, Scatter, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 
 const IndividualPerformance = ({ data, season }) => {
 	const [selectedIndividual, setSelectedIndividual] = useState('');
 	const [individualStats, setIndividualStats] = useState(null);
 	const [individualSubmissions, setIndividualSubmissions] = useState([]);
+	const [scatterData, setScatterData] = useState([]);
+	const theme = useTheme();
+	const isMediumScreen = useMediaQuery(theme.breakpoints.down('md'));
 
 	useEffect(() => {
 		// Reset selection when season changes
 		setSelectedIndividual('');
 		setIndividualStats(null);
 		setIndividualSubmissions([]);
+		setScatterData([]);
 	}, [season]);
 
 	useEffect(() => {
@@ -52,6 +57,33 @@ const IndividualPerformance = ({ data, season }) => {
 			});
 
 			setIndividualSubmissions(processedSubmissions);
+
+			// Calculate relative performance (normalize votes between 0-1 based on this individual's submissions)
+			const maxVotes = Math.max(...processedSubmissions.map(sub => sub.totalVotes));
+			const minVotes = Math.min(...processedSubmissions.map(sub => sub.totalVotes));
+			const voteRange = maxVotes - minVotes;
+
+			// Create scatter plot data
+			const scatterPlotData = processedSubmissions
+				.filter(sub => sub.popularity !== null && sub.popularity !== undefined)
+				.map(sub => {
+					// Calculate relative performance (0-1 scale)
+					const relativePerformance = voteRange > 0
+						? (sub.totalVotes - minVotes) / voteRange
+						: 0.5; // If all songs got same votes, place at middle
+
+					return {
+						x: sub.popularity,
+						y: relativePerformance,
+						title: sub.Title,
+						artist: sub['Artist(s)'],
+						votes: sub.totalVotes,
+						roundName: sub.roundName,
+						roundNumber: sub.roundNumber
+					};
+				});
+
+			setScatterData(scatterPlotData);
 
 			// Calculate overall rank
 			const individualPointsMap = {};
@@ -285,6 +317,36 @@ const IndividualPerformance = ({ data, season }) => {
 		setSelectedIndividual(event.target.value);
 	};
 
+	// Custom tooltip for the scatter plot
+	const CustomTooltip = ({ active, payload }) => {
+		if (active && payload && payload.length) {
+			const data = payload[0].payload;
+			return (
+				<Paper sx={{ p: 2, backgroundColor: 'white', border: `2px solid ${theme.palette.primary.main}` }}>
+					<Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: theme.palette.primary.main }}>
+						{data.title}
+					</Typography>
+					<Typography variant="body2" color="text.secondary">
+						by {data.artist}
+					</Typography>
+					<Typography variant="body2" sx={{ mt: 1 }}>
+						Round {data.roundNumber}: {data.roundName}
+					</Typography>
+					<Typography variant="body2">
+						Votes: {data.votes}
+					</Typography>
+					<Typography variant="body2">
+						Spotify Popularity: {data.x}
+					</Typography>
+					<Typography variant="body2">
+						Relative Performance: {(data.y * 100).toFixed(1)}%
+					</Typography>
+				</Paper>
+			);
+		}
+		return null;
+	};
+
 	// If no individual is selected, show only the dropdown
 	if (!selectedIndividual) {
 		return (
@@ -486,6 +548,153 @@ const IndividualPerformance = ({ data, season }) => {
 							</TableBody>
 						</Table>
 					</TableContainer>
+
+					{/* Performance vs Popularity Scatter Plot */}
+					{scatterData.length > 0 && (
+						<Card sx={{ mt: 4 }}>
+							<CardContent>
+								<Typography variant="h6" gutterBottom sx={{ color: theme.palette.primary.main, fontWeight: 'bold' }}>
+									🎵 Song Performance vs Spotify Popularity
+								</Typography>
+								<Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+									How well did your songs perform relative to their mainstream popularity?
+								</Typography>
+								<Box sx={{
+									width: '100%',
+									height: { xs: 400, sm: 450, md: 500 },
+									minHeight: { xs: 350, sm: 400 }
+								}}>
+									<ResponsiveContainer width="100%" height="100%">
+										<ScatterChart
+											margin={{
+												top: 20,
+												right: isMediumScreen ? 20 : 80,
+												bottom: isMediumScreen ? 40 : 60,
+												left: isMediumScreen ? 10 : 20,
+											}}
+										>
+											<CartesianGrid
+												strokeDasharray="3 3"
+												stroke={theme.palette.divider}
+												opacity={0.3}
+											/>
+											<XAxis
+												type="number"
+												dataKey="x"
+												name="Spotify Popularity"
+												domain={[0, 100]}
+												tick={{ fill: theme.palette.text.secondary, fontSize: isMediumScreen ? 10 : 12 }}
+												label={{
+													value: isMediumScreen ? 'Spotify Popularity' : 'Spotify Popularity (0-100)',
+													position: 'bottom',
+													offset: isMediumScreen ? -5 : -10,
+													style: {
+														textAnchor: 'middle',
+														fill: theme.palette.text.primary,
+														fontSize: isMediumScreen ? '12px' : '14px',
+														fontWeight: 'bold'
+													}
+												}}
+											/>
+											<YAxis
+												type="number"
+												dataKey="y"
+												name="Relative Performance"
+												domain={[0, 1]}
+												tick={{ fill: theme.palette.text.secondary, fontSize: isMediumScreen ? 10 : 12 }}
+												tickFormatter={(value) => `${(value * 100).toFixed(0)}%`}
+												label={{
+													value: isMediumScreen ? 'Performance' : 'Relative Performance (0-100%)',
+													angle: -90,
+													position: 'insideLeft',
+													style: {
+														textAnchor: 'middle',
+														fill: theme.palette.text.primary,
+														fontSize: isMediumScreen ? '12px' : '14px',
+														fontWeight: 'bold'
+													}
+												}}
+											/>
+											<Tooltip content={({ active, payload }) => {
+												if (active && payload && payload.length) {
+													const data = payload[0].payload;
+													return (
+														<Paper sx={{
+															p: { xs: 1.5, sm: 2 },
+															backgroundColor: 'white',
+															border: `2px solid ${theme.palette.primary.main}`,
+															maxWidth: { xs: '250px', sm: '300px' },
+															fontSize: { xs: '0.875rem', sm: '1rem' }
+														}}>
+															<Typography variant="subtitle2" sx={{
+																fontWeight: 'bold',
+																color: theme.palette.primary.main,
+																fontSize: { xs: '0.875rem', sm: '1rem' }
+															}}>
+																{data.title}
+															</Typography>
+															<Typography variant="body2" color="text.secondary" sx={{
+																fontSize: { xs: '0.75rem', sm: '0.875rem' }
+															}}>
+																by {data.artist}
+															</Typography>
+															<Typography variant="body2" sx={{
+																mt: 1,
+																fontSize: { xs: '0.75rem', sm: '0.875rem' }
+															}}>
+																Round {data.roundNumber}: {data.roundName}
+															</Typography>
+															<Typography variant="body2" sx={{
+																fontSize: { xs: '0.75rem', sm: '0.875rem' }
+															}}>
+																Votes: {data.votes}
+															</Typography>
+															<Typography variant="body2" sx={{
+																fontSize: { xs: '0.75rem', sm: '0.875rem' }
+															}}>
+																Spotify Popularity: {data.x}
+															</Typography>
+															<Typography variant="body2" sx={{
+																fontSize: { xs: '0.75rem', sm: '0.875rem' }
+															}}>
+																Relative Performance: {(data.y * 100).toFixed(1)}%
+															</Typography>
+														</Paper>
+													);
+												}
+												return null;
+											}} />
+											<Scatter
+												data={scatterData}
+												fill={theme.palette.primary.main}
+											>
+												{scatterData.map((entry, index) => (
+													<Cell
+														key={`cell-${index}`}
+														fill={theme.palette.primary.main}
+														fillOpacity={0.8}
+														stroke={theme.palette.primary.dark}
+														strokeWidth={2}
+														r={isMediumScreen ? 8 : 6}
+													/>
+												))}
+											</Scatter>
+										</ScatterChart>
+									</ResponsiveContainer>
+								</Box>
+								<Typography variant="body2" color="text.secondary" sx={{
+									mt: 0,
+									fontStyle: 'italic',
+									fontSize: { xs: '0.75rem', sm: '0.875rem' }
+								}}>
+									{isMediumScreen ?
+										'Tap points for song details. Higher points indicate better performance relative to your other submissions.' :
+										'Hover over points to see song details. Higher points indicate better performance relative to your other submissions.'
+									}
+								</Typography>
+							</CardContent>
+						</Card>
+					)}
 				</>
 			)}
 		</Box>

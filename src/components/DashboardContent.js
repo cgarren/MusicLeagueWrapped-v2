@@ -1,5 +1,6 @@
 import React from 'react';
-import { Container, Typography, Grid, Box, Tabs, Tab, useMediaQuery, useTheme } from '@mui/material';
+import { Container, Typography, Grid, Box, Tabs, Tab, useMediaQuery, useTheme, Card, CardContent, Paper } from '@mui/material';
+import { ScatterChart, Scatter, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 
 // Individual award components
 import SuperlativeCard from './SuperlativeCard';
@@ -85,6 +86,238 @@ const DashboardContent = ({
 						votes={data.votes}
 						submissions={data.submissions}
 					/>
+				</Box>
+
+				{/* League Performance vs Popularity Scatter Plot */}
+				<Box sx={{ mb: 6, width: '100%' }}>
+					<Card>
+						<CardContent>
+							<Typography variant="h5" component="h2" gutterBottom sx={{ color: theme.palette.primary.main, fontWeight: 'bold' }}>
+								🎵 League Songs: Performance vs Spotify Popularity
+							</Typography>
+							<Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+								How popular was the music you submitted? Each point represents a song colored by its submitter.
+							</Typography>
+							<Box sx={{
+								width: '100%',
+								height: { xs: 400, sm: 450, md: 500 },
+								minHeight: { xs: 350, sm: 400 }
+							}}>
+								<ResponsiveContainer width="100%" height="100%">
+									<ScatterChart
+										margin={{
+											top: 20,
+											right: isMediumScreen ? 20 : 80,
+											bottom: isMediumScreen ? 40 : 60,
+											left: isMediumScreen ? 10 : 20,
+										}}
+									>
+										<CartesianGrid
+											strokeDasharray="3 3"
+											stroke={theme.palette.divider}
+											opacity={0.3}
+										/>
+										<XAxis
+											type="number"
+											dataKey="x"
+											name="Spotify Popularity"
+											domain={[0, 100]}
+											tick={{ fill: theme.palette.text.secondary, fontSize: isMediumScreen ? 10 : 12 }}
+											label={{
+												value: isMediumScreen ? 'Spotify Popularity' : 'Spotify Popularity (0-100)',
+												position: 'bottom',
+												offset: isMediumScreen ? -5 : -10,
+												style: {
+													textAnchor: 'middle',
+													fill: theme.palette.text.primary,
+													fontSize: isMediumScreen ? '12px' : '14px',
+													fontWeight: 'bold'
+												}
+											}}
+										/>
+										<YAxis
+											type="number"
+											dataKey="y"
+											name="Relative Performance"
+											domain={[0, 1]}
+											tick={{ fill: theme.palette.text.secondary, fontSize: isMediumScreen ? 10 : 12 }}
+											tickFormatter={(value) => `${(value * 100).toFixed(0)}%`}
+											label={{
+												value: isMediumScreen ? 'Performance' : 'Relative Performance (0-100%)',
+												angle: -90,
+												position: 'insideLeft',
+												style: {
+													textAnchor: 'middle',
+													fill: theme.palette.text.primary,
+													fontSize: isMediumScreen ? '12px' : '14px',
+													fontWeight: 'bold'
+												}
+											}}
+										/>
+										<Tooltip content={({ active, payload }) => {
+											if (active && payload && payload.length) {
+												const data = payload[0].payload;
+												return (
+													<Paper sx={{
+														p: { xs: 1.5, sm: 2 },
+														backgroundColor: 'white',
+														border: `2px solid ${theme.palette.primary.main}`,
+														maxWidth: { xs: '250px', sm: '300px' },
+														fontSize: { xs: '0.875rem', sm: '1rem' }
+													}}>
+														<Typography variant="subtitle2" sx={{
+															fontWeight: 'bold',
+															color: theme.palette.primary.main,
+															fontSize: { xs: '0.875rem', sm: '1rem' }
+														}}>
+															{data.title}
+														</Typography>
+														<Typography variant="body2" color="text.secondary" sx={{
+															fontSize: { xs: '0.75rem', sm: '0.875rem' }
+														}}>
+															by {data.artist}
+														</Typography>
+														<Typography variant="body2" sx={{
+															mt: 1,
+															fontSize: { xs: '0.75rem', sm: '0.875rem' }
+														}}>
+															Submitted by: {data.submitter}
+														</Typography>
+														<Typography variant="body2" sx={{
+															fontSize: { xs: '0.75rem', sm: '0.875rem' }
+														}}>
+															Round: {data.roundName}
+														</Typography>
+														<Typography variant="body2" sx={{
+															fontSize: { xs: '0.75rem', sm: '0.875rem' }
+														}}>
+															Votes: {data.votes}
+														</Typography>
+														<Typography variant="body2" sx={{
+															fontSize: { xs: '0.75rem', sm: '0.875rem' }
+														}}>
+															Spotify Popularity: {data.x}
+														</Typography>
+														<Typography variant="body2" sx={{
+															fontSize: { xs: '0.75rem', sm: '0.875rem' }
+														}}>
+															Relative Performance: {(data.y * 100).toFixed(1)}%
+														</Typography>
+													</Paper>
+												);
+											}
+											return null;
+										}} />
+										<Scatter
+											data={(() => {
+												// Calculate scatter plot data for all songs
+												if (!data?.submissions || !data?.votes || !data?.competitors || !data?.rounds) return [];
+
+												// Calculate vote totals for each submission
+												const submissionVotes = {};
+												data.votes.forEach(vote => {
+													const uri = vote['Spotify URI'];
+													submissionVotes[uri] = (submissionVotes[uri] || 0) + parseInt(vote['Points Assigned'] || 0);
+												});
+
+												// Get all vote totals for normalization
+												const allVoteTotals = Object.values(submissionVotes);
+												const maxVotes = Math.max(...allVoteTotals);
+												const minVotes = Math.min(...allVoteTotals);
+												const voteRange = maxVotes - minVotes;
+
+												// Process submissions into scatter plot data
+												return data.submissions
+													.filter(sub => sub.popularity !== null && sub.popularity !== undefined)
+													.map(sub => {
+														const votes = submissionVotes[sub['Spotify URI']] || 0;
+														const relativePerformance = voteRange > 0
+															? (votes - minVotes) / voteRange
+															: 0.5;
+
+														const submitter = data.competitors.find(comp => comp.ID === sub['Submitter ID']);
+														const round = data.rounds.find(r => r.ID === sub['Round ID']);
+
+														return {
+															x: sub.popularity,
+															y: relativePerformance,
+															title: sub.Title,
+															artist: sub['Artist(s)'],
+															submitter: submitter?.Name || 'Unknown',
+															roundName: round?.Name || 'Unknown',
+															votes: votes
+														};
+													});
+											})()}
+											fill={theme.palette.primary.main}
+										>
+											{(() => {
+												// Calculate scatter plot data for all songs (same as above)
+												if (!data?.submissions || !data?.votes || !data?.competitors || !data?.rounds) return [];
+
+												const submissionVotes = {};
+												data.votes.forEach(vote => {
+													const uri = vote['Spotify URI'];
+													submissionVotes[uri] = (submissionVotes[uri] || 0) + parseInt(vote['Points Assigned'] || 0);
+												});
+
+												const allVoteTotals = Object.values(submissionVotes);
+												const maxVotes = Math.max(...allVoteTotals);
+												const minVotes = Math.min(...allVoteTotals);
+												const voteRange = maxVotes - minVotes;
+
+												const scatterData = data.submissions
+													.filter(sub => sub.popularity !== null && sub.popularity !== undefined)
+													.map(sub => {
+														const votes = submissionVotes[sub['Spotify URI']] || 0;
+														const relativePerformance = voteRange > 0
+															? (votes - minVotes) / voteRange
+															: 0.5;
+
+														return {
+															x: sub.popularity,
+															y: relativePerformance,
+															submitterId: sub['Submitter ID']
+														};
+													});
+
+												// Create color mapping for each competitor
+												const colors = [
+													'#FF0000', '#00FF00', '#0000FF', '#FFFF00', '#FF00FF', '#00FFFF', '#800000', '#008000', '#000080', '#808000', '#800080', '#008080', '#FFA500', '#FFC0CB', '#A52A2A', '#808080', '#000000', '#DC143C', '#FFD700', '#4B0082', '#FF6347', '#32CD32', '#87CEEB', '#DDA0DD', '#F0E68C'
+												];
+
+												return scatterData.map((entry, index) => {
+													const competitorIndex = data.competitors.findIndex(comp => comp.ID === entry.submitterId);
+													const colorIndex = competitorIndex >= 0 ? competitorIndex % colors.length : 0;
+
+													return (
+														<Cell
+															key={`cell-${index}`}
+															fill={colors[colorIndex]}
+															fillOpacity={0.7}
+															stroke={colors[colorIndex]}
+															strokeWidth={2}
+															r={isMediumScreen ? 8 : 6}
+														/>
+													);
+												});
+											})()}
+										</Scatter>
+									</ScatterChart>
+								</ResponsiveContainer>
+							</Box>
+							<Typography variant="body2" color="text.secondary" sx={{
+								mt: 0,
+								fontStyle: 'italic',
+								fontSize: { xs: '0.75rem', sm: '0.875rem' }
+							}}>
+								{isMediumScreen ?
+									'Tap points for song details. Each color represents a different competitor.' :
+									'Hover over points to see song details. Each color represents a different competitor. Higher points performed better relative to all songs in the league.'
+								}
+							</Typography>
+						</CardContent>
+					</Card>
 				</Box>
 
 				<Typography variant="h4" component="h2" gutterBottom align="center" sx={{ mb: 4, mt: 2, fontSize: { xs: '1.5rem', sm: '2rem', md: '2.25rem' } }}>
@@ -388,13 +621,23 @@ const DashboardContent = ({
 									title="Max-Vote Giver"
 									description="Assigned all their votes to a single song in the highest percentage of rounds"
 									winnerName={superlatives?.maxVoteGiver?.competitor?.Name}
-									detail={`${superlatives?.maxVoteGiver?.allInRounds}/${superlatives?.maxVoteGiver?.totalRounds} rounds (${superlatives?.maxVoteGiver?.allInPercentage}%) went all-in on one song`}
+									detail={`${superlatives?.maxVoteGiver?.allInRounds}/${superlatives?.maxVoteGiver?.totalRounds} rounds (${superlatives?.maxVoteGiver?.allInPercentage}%) went all-in on one song
+
+								Max votes given:
+								${superlatives?.maxVoteGiver?.allInExamples?.map(example =>
+										`• ${example.points} votes to "${example.songTitle}" by ${example.songArtist}`
+									).join('\n') || 'None'}`}
 									additionalCompetitors={superlatives?.maxVoteGiver?.restOfField}
 									isTied={superlatives?.maxVoteGiver?.isTied}
 									tiedWinners={superlatives?.maxVoteGiver?.tiedWinners}
 									tiedDetails={superlatives?.maxVoteGiver?.isTied ?
-										superlatives?.maxVoteGiver?.tiedWinners?.map(
-											name => `${superlatives?.maxVoteGiver?.allInRounds}/${superlatives?.maxVoteGiver?.totalRounds} rounds (${superlatives?.maxVoteGiver?.allInPercentage}%)`
+										superlatives?.maxVoteGiver?.tiedWinnersData?.map(winner =>
+											`${winner.allInRounds}/${winner.totalRounds} rounds (${winner.allInPercentage.toFixed(1)}%)
+
+											Max votes given:
+											${winner.allInExamples?.map(example =>
+												`• ${example.points} votes to "${example.songTitle}" by ${example.songArtist}`
+											).join('\n') || 'None'}`
 										) : null
 									}
 								/>

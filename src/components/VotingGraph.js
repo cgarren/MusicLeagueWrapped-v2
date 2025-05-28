@@ -390,13 +390,11 @@ const VotingGraph = ({ competitors, votes, submissions }) => {
 					border: '1px solid #eee',
 					borderRadius: 1,
 					backgroundColor: '#fdfdfd',
-					boxSizing: 'border-box',
-					overflowX: 'auto',
-					overflowY: 'auto'
+					boxSizing: 'border-box'
 				}} ref={containerRef}>
 					<canvas
 						ref={canvasRef}
-						style={{ width: '100%', height: '100%', display: 'block', minWidth: isMobile ? '300px' : '600px', minHeight: isMobile ? '300px' : '400px' }}
+						style={{ width: '100%', height: '100%', display: 'block' }}
 					/>
 
 					{hoveredNode && (
