@@ -1707,7 +1707,7 @@ export const calculateComebackKid = (votes, submissions, competitors, rounds) =>
 	};
 };
 
-// Calculate the competitor who missed the most rounds of voting (Doesn't Vote)
+// Calculate the competitor who missed the most rounds of voting (Doesn't Often Vote)
 export const calculateDoesntVote = (votes, competitors, rounds) => {
 	// Filter out any empty or invalid rounds (Papa Parse sometimes includes empty rows)
 	const validRounds = rounds.filter(round => round && round.ID && round.ID.trim() !== '');
