@@ -4,7 +4,7 @@ import { loadAllData, calculateAllSuperlatives, getAvailableSeasons } from '../u
 import DashboardContent from './DashboardContent';
 import SeasonSelector from './SeasonSelector';
 
-const Dashboard = () => {
+const Dashboard = ({ league = 'suit-and-tie' }) => {
 	const [loading, setLoading] = useState(true);
 	const [error, setError] = useState(null);
 	const [superlatives, setSuperlatives] = useState(null);
@@ -18,7 +18,7 @@ const Dashboard = () => {
 	useEffect(() => {
 		const loadSeasons = async () => {
 			try {
-				const seasons = await getAvailableSeasons();
+				const seasons = await getAvailableSeasons(league);
 				setAvailableSeasons(seasons);
 
 				// Set default season to the first available season
@@ -36,7 +36,7 @@ const Dashboard = () => {
 		};
 
 		loadSeasons();
-	}, []);
+	}, [league]);
 
 	// Load data when season changes (but only after seasons are loaded)
 	useEffect(() => {
@@ -45,7 +45,7 @@ const Dashboard = () => {
 		const fetchData = async () => {
 			try {
 				setLoading(true);
-				const fetchedData = await loadAllData(season);
+				const fetchedData = await loadAllData(season, league);
 				setData(fetchedData);
 				const calculatedSuperlatives = calculateAllSuperlatives(fetchedData);
 				setSuperlatives(calculatedSuperlatives);
@@ -58,7 +58,7 @@ const Dashboard = () => {
 		};
 
 		fetchData();
-	}, [season, seasonsLoaded]);
+	}, [season, seasonsLoaded, league]);
 
 	const handleSeasonChange = (newSeason) => {
 		setSeason(newSeason);
@@ -99,6 +99,20 @@ const Dashboard = () => {
 	const currentSeasonInfo = availableSeasons.find(s => s.id === season);
 	const seasonTitle = currentSeasonInfo ? currentSeasonInfo.label : 'Season';
 
+	// Get league display name
+	const getLeagueDisplayName = (leagueId) => {
+		switch (leagueId) {
+			case 'suit-and-tie':
+				return 'Suit & Tie';
+			case 'amherst':
+				return 'Amherst';
+			default:
+				return leagueId;
+		}
+	};
+
+	const leagueDisplayName = getLeagueDisplayName(league);
+
 	// Season selector component
 	const seasonSelector = availableSeasons.length > 1 ? (
 		<SeasonSelector
@@ -115,7 +129,7 @@ const Dashboard = () => {
 			season={season}
 			tabValue={tabValue}
 			onTabChange={handleTabChange}
-			title={`Suit & Tie Music League Wrapped - ${seasonTitle}`}
+			title={`${leagueDisplayName} Music League Wrapped - ${seasonTitle}`}
 			subtitle="Insights and Awards from Music League"
 			headerContent={seasonSelector}
 		/>
