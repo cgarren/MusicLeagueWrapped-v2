@@ -2,7 +2,7 @@ import Papa from 'papaparse';
 import { getTracksPopularity, extractTrackIdsFromUris } from './spotifyApi';
 
 // Function to get available seasons dynamically
-export const getAvailableSeasons = async () => {
+export const getAvailableSeasons = async (league = 'suit-and-tie') => {
 	try {
 		// Since we can't directly list directories in the browser, we'll try to fetch each season
 		// and see which ones exist. We'll try seasons 1-10 for now.
@@ -13,7 +13,7 @@ export const getAvailableSeasons = async () => {
 			const seasonId = `season${i}`;
 			try {
 				// Try to fetch the competitors.csv file for this season
-				const response = await fetch(`/data/${seasonId}/competitors.csv`);
+				const response = await fetch(`/data/${league}/${seasonId}/competitors.csv`);
 				if (response.ok) {
 					availableSeasons.push({
 						id: seasonId,
@@ -58,12 +58,12 @@ const loadCSV = async (filePath) => {
 };
 
 // Load all datasets
-export const loadAllData = async (season = 'season1') => {
+export const loadAllData = async (season = 'season1', league = 'suit-and-tie') => {
 	try {
-		const competitors = await loadCSV(`/data/${season}/competitors.csv`);
-		const rounds = await loadCSV(`/data/${season}/rounds.csv`);
-		const submissions = await loadCSV(`/data/${season}/submissions.csv`);
-		const votes = await loadCSV(`/data/${season}/votes.csv`);
+		const competitors = await loadCSV(`/data/${league}/${season}/competitors.csv`);
+		const rounds = await loadCSV(`/data/${league}/${season}/rounds.csv`);
+		const submissions = await loadCSV(`/data/${league}/${season}/submissions.csv`);
+		const votes = await loadCSV(`/data/${league}/${season}/votes.csv`);
 
 		// Extract all Spotify URIs from submissions
 		const spotifyUris = submissions.map(submission => submission['Spotify URI']);

@@ -5,6 +5,7 @@ export function generateStaticParams() {
     return [
         { slug: [""] },
         { slug: ["suit-and-tie"] },
+        { slug: ["amherst"] },
         { slug: [".well-known", "appspecific", "com.chrome.devtools.json"] },
     ];
 }

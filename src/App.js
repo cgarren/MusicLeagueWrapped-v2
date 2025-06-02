@@ -34,8 +34,15 @@ function App() {
 	// Get the current path to determine which component to render
 	const currentPath = typeof window !== 'undefined' ? window.location.pathname : '/';
 
-	// Determine which dashboard to show based on the path
-	const isPreloadedData = currentPath === '/suit-and-tie';
+	// Determine which dashboard to show and which league data to load
+	const getLeagueFromPath = (path) => {
+		if (path === '/suit-and-tie') return 'suit-and-tie';
+		if (path === '/amherst') return 'amherst';
+		return null;
+	};
+
+	const league = getLeagueFromPath(currentPath);
+	const isPreloadedData = league !== null;
 
 	return (
 		<ThemeProvider theme={theme}>
@@ -47,7 +54,7 @@ function App() {
 			}}>
 				<Header />
 				<Box component="main" sx={{ flexGrow: 1 }}>
-					{isPreloadedData ? <Dashboard /> : <UploadDashboard />}
+					{isPreloadedData ? <Dashboard league={league} /> : <UploadDashboard />}
 				</Box>
 				<Footer />
 			</Box>
