@@ -1,6 +1,7 @@
-import React from 'react';
-import { Container, Typography, Grid, Box, Tabs, Tab, useMediaQuery, useTheme, Card, CardContent, Paper } from '@mui/material';
-import { ScatterChart, Scatter, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
+import React, { useState } from 'react';
+import { Container, Typography, Grid, Box, Tabs, Tab, useMediaQuery, useTheme, Card, CardContent, Paper, Modal, IconButton } from '@mui/material';
+import { Close } from '@mui/icons-material';
+import { ScatterChart, Scatter, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, LineChart, Line, Legend } from 'recharts';
 
 // Individual award components
 import SuperlativeCard from './SuperlativeCard';
@@ -49,6 +50,20 @@ const DashboardContent = ({
 	const theme = useTheme();
 	const isSmallScreen = useMediaQuery(theme.breakpoints.down('sm'));
 	const isMediumScreen = useMediaQuery(theme.breakpoints.down('md'));
+
+	// State for round details modal
+	const [selectedRound, setSelectedRound] = useState(null);
+	const [modalOpen, setModalOpen] = useState(false);
+
+	const handleRoundClick = (roundData, roundNumber) => {
+		setSelectedRound({ roundData, roundNumber });
+		setModalOpen(true);
+	};
+
+	const handleModalClose = () => {
+		setModalOpen(false);
+		setSelectedRound(null);
+	};
 
 	return (
 		<Container maxWidth="xl" sx={{ mt: 4, mb: 4, px: { xs: 2, sm: 3, md: 4 } }}>
@@ -316,6 +331,335 @@ const DashboardContent = ({
 									'Hover over points to see song details. Each color represents a different competitor. Higher points performed better relative to all songs in the league.'
 								}
 							</Typography>
+
+							{/* Color Legend */}
+							<Box sx={{ mt: 2, p: 2, bgcolor: 'grey.50', borderRadius: 1 }}>
+								<Typography variant="subtitle2" sx={{ fontWeight: 'bold', mb: 1 }}>
+									Competitor Legend:
+								</Typography>
+								<Box sx={{
+									display: 'flex',
+									flexWrap: 'wrap',
+									gap: 1.5,
+									justifyContent: 'center'
+								}}>
+									{(() => {
+										const colors = [
+											'#FF0000', '#00FF00', '#0000FF', '#FFFF00', '#FF00FF', '#00FFFF', '#800000', '#008000', '#000080', '#808000', '#800080', '#008080', '#FFA500', '#FFC0CB', '#A52A2A', '#808080', '#000000', '#DC143C', '#FFD700', '#4B0082', '#FF6347', '#32CD32', '#87CEEB', '#DDA0DD', '#F0E68C'
+										];
+
+										return data?.competitors?.map((competitor, index) => {
+											if (!competitor || !competitor.Name) return null;
+											const colorIndex = index % colors.length;
+
+											return (
+												<Box
+													key={competitor.ID || index}
+													sx={{
+														display: 'flex',
+														alignItems: 'center',
+														gap: 0.5,
+														minWidth: 'fit-content'
+													}}
+												>
+													<Box
+														sx={{
+															width: 12,
+															height: 12,
+															borderRadius: '50%',
+															backgroundColor: colors[colorIndex],
+															border: `2px solid ${colors[colorIndex]}`,
+															flexShrink: 0
+														}}
+													/>
+													<Typography
+														variant="caption"
+														sx={{
+															fontSize: { xs: '0.7rem', sm: '0.75rem' },
+															whiteSpace: 'nowrap'
+														}}
+													>
+														{competitor.Name}
+													</Typography>
+												</Box>
+											);
+										}).filter(Boolean);
+									})()}
+								</Box>
+							</Box>
+						</CardContent>
+					</Card>
+				</Box>
+
+				{/* Performance Over Time Line Chart */}
+				<Box sx={{ mb: 6, width: '100%' }}>
+					<Card>
+						<CardContent>
+							<Typography variant="h5" component="h2" gutterBottom sx={{ color: theme.palette.primary.main, fontWeight: 'bold' }}>
+								📈 Performance Over Time
+							</Typography>
+							<Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+								Track how each competitor's performance evolved throughout the season. Each line represents a competitor's vote totals per round.
+							</Typography>
+							<Box sx={{
+								width: '100%',
+								height: { xs: 400, sm: 450, md: 500 },
+								minHeight: { xs: 350, sm: 400 }
+							}}>
+								<ResponsiveContainer width="100%" height="100%">
+									<LineChart
+										data={(() => {
+											// Create performance over time data
+											if (!data?.submissions || !data?.votes || !data?.competitors || !data?.rounds) return [];
+
+											// Calculate vote totals for each submission
+											const submissionVotes = {};
+											data.votes.forEach(vote => {
+												const uri = vote['Spotify URI'];
+												submissionVotes[uri] = (submissionVotes[uri] || 0) + parseInt(vote['Points Assigned'] || 0);
+											});
+
+											// Create a map of round IDs to round numbers for proper ordering
+											const roundOrder = {};
+											data.rounds.forEach((round, index) => {
+												roundOrder[round.ID] = index + 1;
+											});
+
+											// Group submissions by competitor and round
+											const competitorRoundData = {};
+											data.submissions.forEach(submission => {
+												const competitorId = submission['Submitter ID'];
+												const roundId = submission['Round ID'];
+												const roundNumber = roundOrder[roundId];
+												const votes = submissionVotes[submission['Spotify URI']] || 0; // This will be 0 if no votes, which is valid
+
+												if (!competitorRoundData[competitorId]) {
+													competitorRoundData[competitorId] = {};
+												}
+												competitorRoundData[competitorId][roundNumber] = votes; // Store actual vote count, including 0
+											});
+
+											// Create chart data structure
+											const chartData = [];
+											const maxRounds = Math.max(...data.rounds.map((_, index) => index + 1));
+
+											for (let round = 1; round <= maxRounds; round++) {
+												const roundData = { round };
+
+												data.competitors.forEach(competitor => {
+													if (competitor && competitor.Name) {
+														// Check if competitor has data for this round
+														const hasSubmission = competitorRoundData[competitor.ID]?.hasOwnProperty(round);
+														if (hasSubmission) {
+															// They submitted, use actual vote count (could be 0)
+															roundData[competitor.Name] = competitorRoundData[competitor.ID][round];
+														} else {
+															// They didn't submit, use null to create gap in line
+															roundData[competitor.Name] = null;
+														}
+													}
+												});
+
+												chartData.push(roundData);
+											}
+
+											return chartData;
+										})()}
+										margin={{
+											top: 20,
+											right: isMediumScreen ? 20 : 80,
+											bottom: isMediumScreen ? 40 : 60,
+											left: isMediumScreen ? 10 : 20,
+										}}
+										onClick={(data) => {
+											if (data && data.activeLabel) {
+												handleRoundClick(data.activePayload, data.activeLabel);
+											}
+										}}
+									>
+										<CartesianGrid
+											strokeDasharray="3 3"
+											stroke={theme.palette.divider}
+											opacity={0.3}
+										/>
+										<XAxis
+											dataKey="round"
+											type="number"
+											domain={['dataMin', 'dataMax']}
+											tick={{ fill: theme.palette.text.secondary, fontSize: isMediumScreen ? 10 : 12 }}
+											label={{
+												value: 'Round',
+												position: 'insideBottom',
+												offset: isMediumScreen ? -5 : -10,
+												style: {
+													textAnchor: 'middle',
+													fill: theme.palette.text.primary,
+													fontSize: isMediumScreen ? '12px' : '14px',
+													fontWeight: 'bold'
+												}
+											}}
+										/>
+										<YAxis
+											tick={{ fill: theme.palette.text.secondary, fontSize: isMediumScreen ? 10 : 12 }}
+											label={{
+												value: 'Votes Received',
+												angle: -90,
+												position: 'insideLeft',
+												style: {
+													textAnchor: 'middle',
+													fill: theme.palette.text.primary,
+													fontSize: isMediumScreen ? '12px' : '14px',
+													fontWeight: 'bold'
+												}
+											}}
+										/>
+										<Tooltip
+											content={({ active, payload, label }) => {
+												if (active && payload && payload.length) {
+													const hasData = payload.some(entry => entry.value !== null);
+													if (!hasData) return null;
+
+													// Get round info
+													const roundNumber = label;
+													const currentRound = data.rounds?.[roundNumber - 1];
+
+													// Find the winner (highest votes)
+													const competitorsWithVotes = payload
+														.filter(entry => entry.value !== null)
+														.sort((a, b) => (b.value || 0) - (a.value || 0));
+
+													const winner = competitorsWithVotes[0];
+													const isMultipleWinners = competitorsWithVotes.length > 1 &&
+														competitorsWithVotes[1]?.value === winner?.value;
+
+													return (
+														<Paper sx={{
+															p: 1.5,
+															backgroundColor: 'white',
+															border: `2px solid ${theme.palette.primary.main}`,
+															fontSize: '0.875rem',
+															maxWidth: '280px'
+														}}>
+															<Typography variant="subtitle2" sx={{
+																fontWeight: 'bold',
+																color: theme.palette.primary.main,
+																mb: 0.5
+															}}>
+																{currentRound?.Name || `Round ${label}`}
+															</Typography>
+															{winner && (
+																<Typography variant="body2" sx={{
+																	mb: 0.5,
+																	color: 'text.primary'
+																}}>
+																	{isMultipleWinners ? 'Tied Winners' : 'Winner'}: {winner.dataKey} ({winner.value} votes)
+																</Typography>
+															)}
+															<Typography variant="caption" sx={{
+																color: 'text.secondary',
+																fontStyle: 'italic'
+															}}>
+																Click to see detailed results
+															</Typography>
+														</Paper>
+													);
+												}
+												return null;
+											}}
+										/>
+										{/* Generate a line for each competitor */}
+										{(() => {
+											const colors = [
+												'#FF0000', '#00FF00', '#0000FF', '#FFFF00', '#FF00FF', '#00FFFF', '#800000', '#008000', '#000080', '#808000', '#800080', '#008080', '#FFA500', '#FFC0CB', '#A52A2A', '#808080', '#000000', '#DC143C', '#FFD700', '#4B0082', '#FF6347', '#32CD32', '#87CEEB', '#DDA0DD', '#F0E68C'
+											];
+
+											return data?.competitors?.map((competitor, index) => {
+												if (!competitor || !competitor.Name) return null;
+												const colorIndex = index % colors.length;
+
+												return (
+													<Line
+														key={competitor.ID || index}
+														type="linear"
+														dataKey={competitor.Name}
+														stroke={colors[colorIndex]}
+														strokeWidth={2}
+														dot={{ fill: colors[colorIndex], strokeWidth: 2, r: 4 }}
+														connectNulls={false}
+														activeDot={{ r: 6, strokeWidth: 2 }}
+													/>
+												);
+											}).filter(Boolean);
+										})()}
+									</LineChart>
+								</ResponsiveContainer>
+							</Box>
+							<Typography variant="body2" color="text.secondary" sx={{
+								mt: 2,
+								fontStyle: 'italic',
+								fontSize: { xs: '0.75rem', sm: '0.875rem' }
+							}}>
+								{isMediumScreen ?
+									'Tap anywhere on the chart to see detailed round results. Missing points indicate no submission in that round.' :
+									'Click anywhere on the chart to see detailed round results with song information. Missing points indicate a competitor did not submit in that round.'
+								}
+							</Typography>
+
+							{/* Color Legend */}
+							<Box sx={{ mt: 2, p: 2, bgcolor: 'grey.50', borderRadius: 1 }}>
+								<Typography variant="subtitle2" sx={{ fontWeight: 'bold', mb: 1 }}>
+									Competitor Legend:
+								</Typography>
+								<Box sx={{
+									display: 'flex',
+									flexWrap: 'wrap',
+									gap: 1.5,
+									justifyContent: 'center'
+								}}>
+									{(() => {
+										const colors = [
+											'#FF0000', '#00FF00', '#0000FF', '#FFFF00', '#FF00FF', '#00FFFF', '#800000', '#008000', '#000080', '#808000', '#800080', '#008080', '#FFA500', '#FFC0CB', '#A52A2A', '#808080', '#000000', '#DC143C', '#FFD700', '#4B0082', '#FF6347', '#32CD32', '#87CEEB', '#DDA0DD', '#F0E68C'
+										];
+
+										return data?.competitors?.map((competitor, index) => {
+											if (!competitor || !competitor.Name) return null;
+											const colorIndex = index % colors.length;
+
+											return (
+												<Box
+													key={competitor.ID || index}
+													sx={{
+														display: 'flex',
+														alignItems: 'center',
+														gap: 0.5,
+														minWidth: 'fit-content'
+													}}
+												>
+													{/* Line indicator instead of dot */}
+													<Box
+														sx={{
+															width: 20,
+															height: 3,
+															backgroundColor: colors[colorIndex],
+															borderRadius: 1,
+															flexShrink: 0
+														}}
+													/>
+													<Typography
+														variant="caption"
+														sx={{
+															fontSize: { xs: '0.7rem', sm: '0.75rem' },
+															whiteSpace: 'nowrap'
+														}}
+													>
+														{competitor.Name}
+													</Typography>
+												</Box>
+											);
+										}).filter(Boolean);
+									})()}
+								</Box>
+							</Box>
 						</CardContent>
 					</Card>
 				</Box>
@@ -354,6 +698,7 @@ const DashboardContent = ({
 										superlatives?.mostPopular?.tiedWinners?.map(name =>
 											`Total Votes: ${superlatives?.mostPopular?.points}`
 										) : null}
+									calculationKey="mostPopular"
 								/>
 							</Box>
 						</Grid>
@@ -367,7 +712,7 @@ const DashboardContent = ({
 							<Box sx={{ width: '100%', maxWidth: '500px' }}>
 								<SuperlativeCard
 									title="Consistently Popular"
-									description="Received the highest average votes per submission"
+									description="Highest average votes per submission"
 									winnerName={superlatives?.leastPopular?.competitor?.Name}
 									detail={`Average Votes: ${superlatives?.leastPopular?.avgPoints}`}
 									additionalCompetitors={superlatives?.leastPopular?.restOfField}
@@ -377,6 +722,7 @@ const DashboardContent = ({
 										superlatives?.leastPopular?.tiedWinners?.map(name =>
 											`Average Votes: ${superlatives?.leastPopular?.avgPoints}`
 										) : null}
+									calculationKey="consistentlyPopular"
 								/>
 							</Box>
 						</Grid>
@@ -390,7 +736,7 @@ const DashboardContent = ({
 							<Box sx={{ width: '100%', maxWidth: '500px' }}>
 								<SuperlativeCard
 									title="Most Average"
-									description="Closest to the overall average score across all submissions"
+									description="Closest to the overall league average score"
 									winnerName={superlatives?.mostAverage?.competitor?.Name}
 									detail={`Average Votes: ${superlatives?.mostAverage?.avgPoints} (Overall Avg: ${superlatives?.mostAverage?.overallAvg})`}
 									additionalCompetitors={superlatives?.mostAverage?.restOfField}
@@ -400,6 +746,7 @@ const DashboardContent = ({
 										superlatives?.mostAverage?.tiedWinners?.map(name =>
 											`Average Votes: ${superlatives?.mostAverage?.avgPoints} (Overall Avg: ${superlatives?.mostAverage?.overallAvg})`
 										) : null}
+									calculationKey="mostAverage"
 								/>
 							</Box>
 						</Grid>
@@ -443,6 +790,7 @@ const DashboardContent = ({
 											return `Score: ${superlatives?.bestPerformance?.score} votes`;
 										}) : null
 									}
+									calculationKey="bestPerformance"
 								/>
 							</Box>
 						</Grid>
@@ -456,7 +804,7 @@ const DashboardContent = ({
 							<Box sx={{ width: '100%', maxWidth: '500px' }}>
 								<SuperlativeCard
 									title="Comeback Kid"
-									description="Made the biggest comeback from their lowest-scoring submission to their best subsequent performance"
+									description="Biggest comeback from lowest submission to best subsequent performance"
 									winnerName={superlatives?.comebackKid?.competitor?.Name}
 									detail={`Comeback: +${superlatives?.comebackKid?.comebackMagnitude} points
 
@@ -486,6 +834,7 @@ const DashboardContent = ({
 											name => `Comeback: +${superlatives?.comebackKid?.comebackMagnitude} points`
 										) : null
 									}
+									calculationKey="comebackKid"
 								/>
 							</Box>
 						</Grid>
@@ -510,7 +859,7 @@ const DashboardContent = ({
 							<Box sx={{ width: '100%', maxWidth: '500px' }}>
 								<SuperlativeCard
 									title="Trend Setter"
-									description="Submitted the most obscure songs based on Spotify popularity (lower scores are more obscure)"
+									description="Submitted the most obscure songs based on Spotify popularity"
 									winnerName={superlatives?.spotify?.trendSetter?.competitor?.Name}
 									detail={`Average song popularity: ${superlatives?.spotify?.trendSetter?.avgPopularity} / 100`}
 									additionalCompetitors={superlatives?.spotify?.trendSetter?.restOfField}
@@ -521,6 +870,7 @@ const DashboardContent = ({
 											name => `Average popularity: ${superlatives?.spotify?.trendSetter?.avgPopularity} / 100`
 										) : null
 									}
+									calculationKey="trendSetter"
 								/>
 							</Box>
 						</Grid>
@@ -534,7 +884,7 @@ const DashboardContent = ({
 							<Box sx={{ width: '100%', maxWidth: '500px' }}>
 								<SuperlativeCard
 									title="Mainstream"
-									description="Submitted the most popular songs based on Spotify popularity (higher scores are more popular)"
+									description="Submitted the most popular songs based on Spotify popularity"
 									winnerName={superlatives?.spotify?.mainstream?.competitor?.Name}
 									detail={`Average song popularity: ${superlatives?.spotify?.mainstream?.avgPopularity} / 100`}
 									additionalCompetitors={superlatives?.spotify?.mainstream?.restOfField}
@@ -545,6 +895,7 @@ const DashboardContent = ({
 											name => `Average popularity: ${superlatives?.spotify?.mainstream?.avgPopularity} / 100`
 										) : null
 									}
+									calculationKey="mainstream"
 								/>
 							</Box>
 						</Grid>
@@ -569,7 +920,7 @@ const DashboardContent = ({
 							<Box sx={{ width: '100%', maxWidth: '500px' }}>
 								<SuperlativeCard
 									title="Vote Spreader"
-									description="Distributes their votes most evenly across all submissions, based on lowest standard deviation of votes assigned"
+									description="Distributes votes most evenly across submissions"
 									winnerName={superlatives?.voteSpreader?.competitor?.Name}
 									detail={`Standard Deviation: ${superlatives?.voteSpreader?.standardDeviation}
 								Average Votes Given: ${superlatives?.voteSpreader?.meanPoints}
@@ -582,6 +933,7 @@ const DashboardContent = ({
 											name => `Standard Deviation: ${superlatives?.voteSpreader?.standardDeviation}`
 										) : null
 									}
+									calculationKey="voteSpreader"
 								/>
 							</Box>
 						</Grid>
@@ -595,7 +947,7 @@ const DashboardContent = ({
 							<Box sx={{ width: '100%', maxWidth: '500px' }}>
 								<SuperlativeCard
 									title="Single-Vote Giver"
-									description="Gave the highest percentage of their total votes as single votes to songs"
+									description="Highest percentage of votes given as single points"
 									winnerName={superlatives?.singleVoteGiver?.competitor?.Name}
 									detail={`${superlatives?.singleVoteGiver?.singleCount} single votes (${superlatives?.singleVoteGiver?.singlePercentage}% of ${superlatives?.singleVoteGiver?.totalVotes} total votes)`}
 									additionalCompetitors={superlatives?.singleVoteGiver?.restOfField}
@@ -606,6 +958,7 @@ const DashboardContent = ({
 											name => `${superlatives?.singleVoteGiver?.singleCount} single votes (${superlatives?.singleVoteGiver?.singlePercentage}% of ${superlatives?.singleVoteGiver?.totalVotes} total votes)`
 										) : null
 									}
+									calculationKey="singleVoteGiver"
 								/>
 							</Box>
 						</Grid>
@@ -619,7 +972,7 @@ const DashboardContent = ({
 							<Box sx={{ width: '100%', maxWidth: '500px' }}>
 								<SuperlativeCard
 									title="Max-Vote Giver"
-									description="Assigned all their votes to a single song in the highest percentage of rounds"
+									description="Most frequently put all votes on a single song in rounds"
 									winnerName={superlatives?.maxVoteGiver?.competitor?.Name}
 									detail={`${superlatives?.maxVoteGiver?.allInRounds}/${superlatives?.maxVoteGiver?.totalRounds} rounds (${superlatives?.maxVoteGiver?.allInPercentage}%) went all-in on one song
 
@@ -640,6 +993,7 @@ const DashboardContent = ({
 											).join('\n') || 'None'}`
 										) : null
 									}
+									calculationKey="maxVoteGiver"
 								/>
 							</Box>
 						</Grid>
@@ -666,6 +1020,7 @@ const DashboardContent = ({
 												name => `${superlatives?.doesntVote?.roundsMissed}/${superlatives?.doesntVote?.totalRounds} rounds missed (${superlatives?.doesntVote?.missedPercentage}%)`
 											) : null
 										}
+										calculationKey="doesntVote"
 									/>
 								</Box>
 							</Grid>
@@ -691,7 +1046,7 @@ const DashboardContent = ({
 							<Box sx={{ width: '100%', maxWidth: '500px' }}>
 								<SuperlativeCard
 									title="Early Bird Voter"
-									description={superlatives?.votingTiming?.earlyVoter?.description}
+									description="Most frequently voted early in rounds"
 									winnerName={superlatives?.votingTiming?.earlyVoter?.competitor?.Name}
 									detail={`${superlatives?.votingTiming?.earlyVoter?.earlyRounds} rounds voted early`}
 									additionalCompetitors={superlatives?.votingTiming?.earlyVoter?.restOfField}
@@ -702,6 +1057,7 @@ const DashboardContent = ({
 											name => `${superlatives?.votingTiming?.earlyVoter?.earlyRounds} rounds voted early`
 										) : null
 									}
+									calculationKey="earlyVoter"
 								/>
 							</Box>
 						</Grid>
@@ -715,7 +1071,7 @@ const DashboardContent = ({
 							<Box sx={{ width: '100%', maxWidth: '500px' }}>
 								<SuperlativeCard
 									title="Last Minute Voter"
-									description={superlatives?.votingTiming?.lateVoter?.description}
+									description="Most frequently voted late in rounds"
 									winnerName={superlatives?.votingTiming?.lateVoter?.competitor?.Name}
 									detail={`${superlatives?.votingTiming?.lateVoter?.lateRounds} rounds voted late`}
 									additionalCompetitors={superlatives?.votingTiming?.lateVoter?.restOfField}
@@ -726,6 +1082,7 @@ const DashboardContent = ({
 											name => `${superlatives?.votingTiming?.lateVoter?.lateRounds} rounds voted late`
 										) : null
 									}
+									calculationKey="lateVoter"
 								/>
 							</Box>
 						</Grid>
@@ -764,6 +1121,7 @@ const DashboardContent = ({
 											name => `${superlatives?.longestComment?.commentLength} characters`
 										) : null
 									}
+									calculationKey="longestComment"
 								/>
 							</Box>
 						</Grid>
@@ -788,6 +1146,7 @@ const DashboardContent = ({
 											name => `${superlatives?.mostComments?.commentCount} comments`
 										) : null
 									}
+									calculationKey="mostComments"
 								/>
 							</Box>
 						</Grid>
@@ -812,7 +1171,7 @@ const DashboardContent = ({
 							<Box sx={{ width: '100%', maxWidth: '500px' }}>
 								<SuperlativeCard
 									title="Most Compatible"
-									description="Pair who consistently gave each other high votes, calculated as the geometric mean of average votes exchanged"
+									description="Pair who consistently gave each other high votes"
 									winnerName={`${superlatives?.compatibility?.mostCompatible?.competitor1?.Name} & ${superlatives?.compatibility?.mostCompatible?.competitor2?.Name}`}
 									detail={`Compatibility Score: ${superlatives?.compatibility?.mostCompatible?.score}
 								${superlatives?.compatibility?.mostCompatible?.competitor1?.Name} → ${superlatives?.compatibility?.mostCompatible?.competitor2?.Name}: ${superlatives?.compatibility?.mostCompatible?.avgAToB} avg votes
@@ -830,6 +1189,7 @@ const DashboardContent = ({
 											name => `Compatibility Score: ${superlatives?.compatibility?.mostCompatible?.score}`
 										) : null
 									}
+									calculationKey="mostCompatible"
 								/>
 							</Box>
 						</Grid>
@@ -843,7 +1203,7 @@ const DashboardContent = ({
 							<Box sx={{ width: '100%', maxWidth: '500px' }}>
 								<SuperlativeCard
 									title="Least Compatible"
-									description="Pair who consistently gave each other low votes, calculated as the geometric mean of average votes exchanged"
+									description="Pair who consistently gave each other low votes"
 									winnerName={`${superlatives?.compatibility?.leastCompatible?.competitor1?.Name} & ${superlatives?.compatibility?.leastCompatible?.competitor2?.Name}`}
 									detail={`Compatibility Score: ${superlatives?.compatibility?.leastCompatible?.score}
 								${superlatives?.compatibility?.leastCompatible?.competitor1?.Name} → ${superlatives?.compatibility?.leastCompatible?.competitor2?.Name}: ${superlatives?.compatibility?.leastCompatible?.avgAToB} avg votes
@@ -861,6 +1221,7 @@ const DashboardContent = ({
 											name => `Compatibility Score: ${superlatives?.compatibility?.leastCompatible?.score}`
 										) : null
 									}
+									calculationKey="leastCompatible"
 								/>
 							</Box>
 						</Grid>
@@ -874,7 +1235,7 @@ const DashboardContent = ({
 							<Box sx={{ width: '100%', maxWidth: '500px' }}>
 								<SuperlativeCard
 									title="Most Similar Taste"
-									description="Pair who voted the most similarly across songs, based on average difference in votes assigned"
+									description="Pair who voted most similarly across songs"
 									winnerName={`${superlatives?.similarity?.mostSimilar?.competitor1?.Name} & ${superlatives?.similarity?.mostSimilar?.competitor2?.Name}`}
 									detail={`Similarity Score: ${superlatives?.similarity?.mostSimilar?.score}
 								Average Difference: ${superlatives?.similarity?.mostSimilar?.avgDiff ?? 'N/A'} votes
@@ -892,6 +1253,7 @@ const DashboardContent = ({
 											name => `Similarity Score: ${superlatives?.similarity?.mostSimilar?.score}`
 										) : null
 									}
+									calculationKey="mostSimilar"
 								/>
 							</Box>
 						</Grid>
@@ -905,7 +1267,7 @@ const DashboardContent = ({
 							<Box sx={{ width: '100%', maxWidth: '500px' }}>
 								<SuperlativeCard
 									title="Most Different Taste"
-									description="Pair who voted the most differently across songs, based on average difference in votes assigned"
+									description="Pair who voted most differently across songs"
 									winnerName={`${superlatives?.similarity?.leastSimilar?.competitor1?.Name} & ${superlatives?.similarity?.leastSimilar?.competitor2?.Name}`}
 									detail={`Similarity Score: ${superlatives?.similarity?.leastSimilar?.score}
 								Average Difference: ${superlatives?.similarity?.leastSimilar?.avgDiff ?? 'N/A'} votes
@@ -923,6 +1285,7 @@ const DashboardContent = ({
 											name => `Similarity Score: ${superlatives?.similarity?.leastSimilar?.score}`
 										) : null
 									}
+									calculationKey="leastSimilar"
 								/>
 							</Box>
 						</Grid>
@@ -934,6 +1297,165 @@ const DashboardContent = ({
 			<TabPanel value={tabValue} index={1}>
 				<IndividualPerformance data={data} season={season} />
 			</TabPanel>
+
+			{/* Round Details Modal */}
+			<Modal
+				open={modalOpen}
+				onClose={handleModalClose}
+				sx={{
+					display: 'flex',
+					alignItems: 'center',
+					justifyContent: 'center',
+					p: 2
+				}}
+			>
+				<Paper sx={{
+					backgroundColor: 'white',
+					border: `2px solid ${theme.palette.primary.main}`,
+					borderRadius: 2,
+					p: 3,
+					maxWidth: { xs: '90vw', sm: '600px' },
+					maxHeight: { xs: '80vh', sm: '70vh' },
+					overflowY: 'auto',
+					outline: 'none',
+					'&::-webkit-scrollbar': {
+						width: '8px',
+					},
+					'&::-webkit-scrollbar-track': {
+						backgroundColor: 'rgba(0,0,0,0.05)',
+						borderRadius: '10px',
+					},
+					'&::-webkit-scrollbar-thumb': {
+						backgroundColor: 'rgba(0,0,0,0.2)',
+						borderRadius: '10px',
+					}
+				}}>
+					{selectedRound && (
+						<>
+							<Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+								<Typography variant="h5" sx={{
+									fontWeight: 'bold',
+									color: theme.palette.primary.main
+								}}>
+									{(() => {
+										const roundNumber = selectedRound.roundNumber;
+										const currentRound = data.rounds?.[roundNumber - 1];
+										return currentRound?.Name || `Round ${roundNumber}`;
+									})()}
+								</Typography>
+								<IconButton onClick={handleModalClose} size="small">
+									<Close />
+								</IconButton>
+							</Box>
+
+							{(() => {
+								const roundNumber = selectedRound.roundNumber;
+								const currentRound = data.rounds?.[roundNumber - 1];
+
+								// Create a map of competitor submissions for this round
+								const roundSubmissions = {};
+								data.submissions?.forEach(submission => {
+									if (submission['Round ID'] === currentRound?.ID) {
+										const competitorId = submission['Submitter ID'];
+										const competitor = data.competitors?.find(c => c.ID === competitorId);
+										if (competitor) {
+											roundSubmissions[competitor.Name] = {
+												title: submission.Title,
+												artist: submission['Artist(s)']
+											};
+										}
+									}
+								});
+
+								const competitors = selectedRound.roundData
+									?.filter(entry => entry.value !== null)
+									?.sort((a, b) => (b.value || 0) - (a.value || 0)) || [];
+
+								return (
+									<Box>
+										{competitors.map((entry, index) => {
+											const competitorName = entry.dataKey;
+											const submission = roundSubmissions[competitorName];
+											const colors = [
+												'#FF0000', '#00FF00', '#0000FF', '#FFFF00', '#FF00FF', '#00FFFF', '#800000', '#008000', '#000080', '#808000', '#800080', '#008080', '#FFA500', '#FFC0CB', '#A52A2A', '#808080', '#000000', '#DC143C', '#FFD700', '#4B0082', '#FF6347', '#32CD32', '#87CEEB', '#DDA0DD', '#F0E68C'
+											];
+											const competitorIndex = data.competitors?.findIndex(c => c.Name === competitorName) || 0;
+											const color = colors[competitorIndex % colors.length];
+
+											return (
+												<Box key={index} sx={{
+													mb: 2.5,
+													pb: 2,
+													borderBottom: index < competitors.length - 1 ? '1px solid #eee' : 'none',
+													display: 'flex',
+													alignItems: 'flex-start',
+													gap: 1
+												}}>
+													<Box
+														sx={{
+															width: 16,
+															height: 16,
+															borderRadius: '50%',
+															backgroundColor: color,
+															border: `2px solid ${color}`,
+															flexShrink: 0,
+															mt: 0.25
+														}}
+													/>
+													<Box sx={{ flexGrow: 1 }}>
+														<Typography
+															variant="h6"
+															sx={{
+																fontSize: '1rem',
+																fontWeight: 'bold',
+																color: color,
+																mb: 0.5
+															}}
+														>
+															{competitorName}: {entry.value} votes
+														</Typography>
+														{submission ? (
+															<Typography
+																variant="body2"
+																sx={{
+																	color: 'text.primary',
+																	mb: 0.25
+																}}
+															>
+																<strong>"{submission.title}"</strong>
+															</Typography>
+														) : (
+															<Typography
+																variant="body2"
+																sx={{
+																	color: 'text.secondary',
+																	fontStyle: 'italic'
+																}}
+															>
+																No submission
+															</Typography>
+														)}
+														{submission && (
+															<Typography
+																variant="body2"
+																sx={{
+																	color: 'text.secondary'
+																}}
+															>
+																by {submission.artist}
+															</Typography>
+														)}
+													</Box>
+												</Box>
+											);
+										})}
+									</Box>
+								);
+							})()}
+						</>
+					)}
+				</Paper>
+			</Modal>
 		</Container>
 	);
 };

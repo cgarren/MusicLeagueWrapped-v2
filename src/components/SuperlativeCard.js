@@ -1,7 +1,8 @@
 import React from 'react';
 import { Card, CardContent, Typography, Box, Divider, List, ListItem, ListItemText } from '@mui/material';
+import CalculationExplanation from './CalculationExplanation';
 
-const SuperlativeCard = ({ title, description, winnerName, detail, additionalCompetitors, isTied, tiedWinners, tiedDetails }) => {
+const SuperlativeCard = ({ title, description, winnerName, detail, additionalCompetitors, isTied, tiedWinners, tiedDetails, calculationKey }) => {
 	return (
 		<Card sx={{
 			height: '100%',
@@ -135,6 +136,11 @@ const SuperlativeCard = ({ title, description, winnerName, detail, additionalCom
 							))}
 						</List>
 					</Box>
+				)}
+
+				{/* Calculation Explanation */}
+				{calculationKey && (
+					<CalculationExplanation calculationKey={calculationKey} />
 				)}
 			</CardContent>
 		</Card>
