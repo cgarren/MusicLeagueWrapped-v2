@@ -579,10 +579,10 @@ const VotingGraph = ({ competitors, votes, submissions }) => {
 
 									{hoveredNode.votingStats?.mostVotedFor && (
 										<Box sx={{ mb: 0 }}>
-											<Typography variant="caption" sx={{ fontWeight: 'bold', color: 'success.main' }}>
-												💚 Most votes given to:
+											<Typography variant="caption" sx={{ fontWeight: 'bold', color: 'black' }}>
+												Most votes given to:
 											</Typography>
-											<Typography variant="body2" sx={{ fontSize: '0.85rem' }}>
+											<Typography variant="body2" sx={{ fontSize: '0.85rem', color: 'black' }}>
 												{hoveredNode.votingStats.mostVotedFor.name} ({hoveredNode.votingStats.mostVotedFor.points} votes)
 											</Typography>
 										</Box>
