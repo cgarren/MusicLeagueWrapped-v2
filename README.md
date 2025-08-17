@@ -1,25 +1,54 @@
 # Music League Wrapped
 
-A React dashboard that displays insights and "superlatives" from Music League data. This project analyzes the voting patterns, submissions, and performances of competitors in a Music League and presents them in an engaging dashboard format.
+A comprehensive React dashboard that displays insights, analytics, and "superlatives" from Music League data. This project analyzes voting patterns, submissions, and performances of competitors in a Music League and presents them in an engaging, interactive dashboard format with detailed visualizations and explanations.
 
 ## Features
 
-The dashboard calculates and displays the following "superlatives":
+### Superlatives & Awards
+
+The dashboard calculates and displays comprehensive "superlatives" with detailed explanations:
 
 - **Most Popular Overall**: Competitor who received the most total points across all submissions
 - **Consistently Popular**: Competitor who received the highest average points per submission
 - **Most Average**: Competitor whose average score is closest to the overall average
 - **Best Performance**: Highest-scoring submission in a single round
+- **Comeback Kid**: Competitor with the biggest improvement between their worst and best rounds
+- **Trend Setter**: Competitor who submitted the most obscure songs (based on Spotify popularity)
+- **Mainstream**: Competitor who submitted the most popular songs (based on Spotify popularity)
+- **Vote Spreader**: Competitor who distributed votes most evenly across submissions
+- **Single-Vote Giver**: Competitor who most frequently gave exactly 1 vote to submissions
+- **Max-Vote Giver**: Competitor who most frequently gave the maximum votes (5 points) to submissions
+- **Most Compatible Pair**: Two competitors who consistently gave each other high votes
+- **Least Compatible Pair**: Two competitors who consistently gave each other low votes
+- **Most Similar Taste**: Two competitors who voted most similarly across songs
+- **Most Different Taste**: Two competitors who voted most differently across songs
+- **Early Bird Voter**: Competitor who most frequently submitted votes early in voting periods
+- **Last Minute Voter**: Competitor who most frequently submitted votes late in voting periods
 - **Longest Comment**: Competitor who left the longest comment
 - **Most Comments Given**: Competitor who left the most comments when voting
-- **Most Compatible Pair**: Two competitors who consistently gave each other high votes (based on geometric mean of average votes exchanged)
-- **Least Compatible Pair**: Two competitors who consistently gave each other low votes (based on geometric mean of average votes exchanged)
-- **Most Similar Taste**: Two competitors who voted most similarly across songs (based on average difference in votes assigned)
-- **Most Different Taste**: Two competitors who voted most differently across songs (based on average difference in votes assigned)
-- **Early Bird Voter**: Competitor who most frequently submitted votes within the first 25% of voting periods
-- **Last Minute Voter**: Competitor who most frequently submitted votes within the last 25% of voting periods
-- **Trend Setter**: Competitor who submitted the most obscure songs (based on Spotify popularity)
-- **Crowd Pleaser**: Competitor who submitted the most popular songs (based on Spotify popularity)
+- **Doesn't Often Vote**: Competitor who participated in the fewest voting rounds
+
+### Interactive Visualizations
+
+#### Performance vs. Popularity Scatter Plot
+- Visual comparison of song performance (votes received) vs. Spotify popularity
+- Color-coded by competitor with interactive tooltips
+- Shows relationship between mainstream appeal and league success
+
+#### Performance Over Time Line Chart
+- Track each competitor's vote totals across all rounds
+- Straight-line connections between data points for precise visualization
+- Click-to-explore detailed round results with song information
+- Color-coded competitor legend
+- Shows participation gaps and performance trends
+
+#### Enhanced Voting Network Graph
+- Interactive network visualization of voting relationships
+- **Color-coded directional arrows** showing who voted for whom
+- **Arrow focusing system**: Click competitors to highlight only their voting patterns
+- Enhanced tooltips showing voting statistics (most votes given to)
+- Professional legends explaining arrow meanings and interactions
+- Clear visual distinction between vote strength (line thickness) and vote origin (color)
 
 ## Getting Started
 
@@ -61,12 +90,12 @@ The data directory supports multiple "seasons" of Music League data, organized i
 
 ## Technologies Used
 
-- React
-- Next.js
-- Material UI
-- papaparse (for CSV parsing)
-- recharts (for data visualization)
-
+- **React** - Frontend framework with hooks for state management
+- **Next.js** - React framework with file-based routing
+- **Material UI (MUI)** - Component library for consistent design
+- **Recharts** - Data visualization library for interactive charts
+- **Canvas API** - Custom network graph visualization
+- **papaparse** - CSV parsing for data ingestion
 
 ## Acknowledgments
 
