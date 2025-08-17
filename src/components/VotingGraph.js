@@ -7,6 +7,7 @@ const VotingGraph = ({ competitors, votes, submissions }) => {
 	const containerRef = useRef(null);
 	const [hoveredNode, setHoveredNode] = useState(null);
 	const [tooltipPos, setTooltipPos] = useState({ x: 0, y: 0 });
+	const [focusedCompetitorId, setFocusedCompetitorId] = useState(null);
 	const theme = useTheme();
 	const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
 
@@ -143,6 +144,18 @@ const VotingGraph = ({ competitors, votes, submissions }) => {
 			globalMaxPoints = Math.max(globalMaxPoints, max);
 		});
 
+		// Define consistent color scheme matching other graphs
+		const colors = [
+			'#FF0000', '#00FF00', '#0000FF', '#FFFF00', '#FF00FF', '#00FFFF', '#800000', '#008000', '#000080', '#808000', '#800080', '#008080', '#FFA500', '#FFC0CB', '#A52A2A', '#808080', '#000000', '#DC143C', '#FFD700', '#4B0082', '#FF6347', '#32CD32', '#87CEEB', '#DDA0DD', '#F0E68C'
+		];
+
+		// Create mapping from competitor ID to color
+		const competitorColors = {};
+		activeCompetitors.forEach((competitor, index) => {
+			const colorIndex = index % colors.length;
+			competitorColors[competitor.ID] = colors[colorIndex];
+		});
+
 		// Draw connections (edges) - second pass for actual relationships
 		Object.keys(voteMatrix).forEach(voterId => {
 			Object.keys(voteMatrix[voterId] || {}).forEach(submitterId => {
@@ -154,7 +167,35 @@ const VotingGraph = ({ competitors, votes, submissions }) => {
 					// Calculate line properties based on points
 					const normalizedPoints = points / globalMaxPoints;
 					const lineWidth = Math.max(0.5, normalizedPoints * (isMobile ? 6 : 8));
-					const alpha = Math.min(0.9, Math.max(0.1, normalizedPoints));
+					let alpha = Math.min(0.9, Math.max(0.3, normalizedPoints));
+
+					// Get the color for this voter (arrow originator)
+					const voterColor = competitorColors[voterId] || '#800080';
+
+					// Convert hex color to RGB for alpha blending
+					const hexToRgb = (hex) => {
+						const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+						return result ? {
+							r: parseInt(result[1], 16),
+							g: parseInt(result[2], 16),
+							b: parseInt(result[3], 16)
+						} : { r: 128, g: 0, b: 128 };
+					};
+
+					const rgb = hexToRgb(voterColor);
+
+					// Apply focus effect: dim other competitors' arrows when one is focused
+					let isFocused = true;
+					if (focusedCompetitorId !== null) {
+						isFocused = voterId === focusedCompetitorId;
+						if (!isFocused) {
+							// Dim non-focused arrows significantly
+							alpha *= 0.15;
+						} else {
+							// Slightly enhance focused arrows
+							alpha = Math.min(1.0, alpha * 1.2);
+						}
+					}
 
 					// Draw relationship line
 					ctx.beginPath();
@@ -180,38 +221,73 @@ const VotingGraph = ({ competitors, votes, submissions }) => {
 						endPos.y
 					);
 
-					ctx.strokeStyle = `rgba(146, 28, 189, ${alpha})`;
+					ctx.strokeStyle = `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${alpha})`;
 					ctx.lineWidth = lineWidth;
 					ctx.stroke();
 
-					// Add arrowhead to show direction
-					const arrowSize = nodeRadius * 0.5 + lineWidth;
+					// Add enhanced arrowhead to show direction
+					const baseArrowSize = isMobile ? 8 : 12;
+					const arrowSize = baseArrowSize + (normalizedPoints * (isMobile ? 6 : 10));
 					const angle = Math.atan2(endPos.y - midY - offsetY, endPos.x - midX - offsetX);
 
+					// Position arrow slightly away from the node edge to avoid overlap
+					const arrowDistance = nodeRadius + 3;
+					const arrowX = endPos.x - arrowDistance * Math.cos(angle);
+					const arrowY = endPos.y - arrowDistance * Math.sin(angle);
+
+					// Draw a more prominent arrowhead
 					ctx.beginPath();
-					ctx.moveTo(endPos.x, endPos.y);
+					ctx.moveTo(arrowX, arrowY);
 					ctx.lineTo(
-						endPos.x - arrowSize * Math.cos(angle - Math.PI / 6),
-						endPos.y - arrowSize * Math.sin(angle - Math.PI / 6)
+						arrowX - arrowSize * Math.cos(angle - Math.PI / 5),
+						arrowY - arrowSize * Math.sin(angle - Math.PI / 5)
 					);
 					ctx.lineTo(
-						endPos.x - arrowSize * Math.cos(angle + Math.PI / 6),
-						endPos.y - arrowSize * Math.sin(angle + Math.PI / 6)
+						arrowX - arrowSize * 0.6 * Math.cos(angle),
+						arrowY - arrowSize * 0.6 * Math.sin(angle)
+					);
+					ctx.lineTo(
+						arrowX - arrowSize * Math.cos(angle + Math.PI / 5),
+						arrowY - arrowSize * Math.sin(angle + Math.PI / 5)
 					);
 					ctx.closePath();
-					ctx.fillStyle = `rgba(146, 28, 189, ${alpha})`;
+
+					// Make arrows more visible with higher contrast, using voter's color
+					const arrowAlpha = Math.min(1.0, alpha + 0.2);
+					ctx.fillStyle = `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${arrowAlpha})`;
 					ctx.fill();
+
+					// Add a subtle outline to make arrows even more visible
+					const darkerRgb = {
+						r: Math.max(0, rgb.r - 40),
+						g: Math.max(0, rgb.g - 40),
+						b: Math.max(0, rgb.b - 40)
+					};
+					ctx.strokeStyle = `rgba(${darkerRgb.r}, ${darkerRgb.g}, ${darkerRgb.b}, ${arrowAlpha})`;
+					ctx.lineWidth = 0.5;
+					ctx.stroke();
 				}
 			});
 		});
 
 		// Draw nodes
 		Object.values(nodePositions).forEach(({ x, y, competitor, radius }) => {
-			// Draw outer circle for better visibility
+			const isThisNodeFocused = focusedCompetitorId === competitor.ID;
+
+			// Draw outer circle for better visibility (enhanced for focused node)
 			ctx.beginPath();
-			ctx.arc(x, y, radius + 2, 0, Math.PI * 2);
-			ctx.fillStyle = 'white';
+			ctx.arc(x, y, radius + (isThisNodeFocused ? 4 : 2), 0, Math.PI * 2);
+			ctx.fillStyle = isThisNodeFocused ? '#FFD700' : 'white'; // Gold highlight for focused node
 			ctx.fill();
+
+			// Add extra ring for focused node
+			if (isThisNodeFocused) {
+				ctx.beginPath();
+				ctx.arc(x, y, radius + 6, 0, Math.PI * 2);
+				ctx.strokeStyle = '#FFD700';
+				ctx.lineWidth = 2;
+				ctx.stroke();
+			}
 
 			// Draw node
 			ctx.beginPath();
@@ -267,14 +343,57 @@ const VotingGraph = ({ competitors, votes, submissions }) => {
 			});
 
 			if (clickedNode) {
-				setHoveredNode(clickedNode.competitor);
+				// Calculate voting stats for this competitor
+				const votingStats = calculateVotingStats(clickedNode.competitor.ID);
+
+				// Enhance the competitor object with voting stats
+				const enhancedCompetitor = {
+					...clickedNode.competitor,
+					votingStats
+				};
+
+				setHoveredNode(enhancedCompetitor);
 				setTooltipPos({
 					x: clickedNode.x,
 					y: clickedNode.y
 				});
+
+				// Set focus to this competitor (or clear if already focused)
+				if (focusedCompetitorId === clickedNode.competitor.ID) {
+					setFocusedCompetitorId(null); // Clear focus if clicking the same competitor
+				} else {
+					setFocusedCompetitorId(clickedNode.competitor.ID); // Focus on this competitor
+				}
 			} else {
 				setHoveredNode(null);
+				setFocusedCompetitorId(null); // Clear focus when clicking empty space
 			}
+		};
+
+		// Calculate voting statistics for each competitor
+		const calculateVotingStats = (competitorId) => {
+			const votesGiven = voteMatrix[competitorId] || {};
+			const competitorVotes = Object.entries(votesGiven);
+
+			if (competitorVotes.length === 0) {
+				return { mostVotedFor: null };
+			}
+
+			// Sort by points given (descending for most)
+			const sortedByMost = [...competitorVotes].sort((a, b) => b[1] - a[1]);
+
+			// Find competitor names
+			const findCompetitorName = (id) => {
+				const comp = competitors.find(c => c.ID === id);
+				return comp ? comp.Name : 'Unknown';
+			};
+
+			const mostVotedFor = {
+				name: findCompetitorName(sortedByMost[0][0]),
+				points: sortedByMost[0][1]
+			};
+
+			return { mostVotedFor };
 		};
 
 		// Add mousemove handler for hover effects
@@ -291,7 +410,17 @@ const VotingGraph = ({ competitors, votes, submissions }) => {
 				const distance = Math.sqrt(dx * dx + dy * dy);
 				if (distance <= node.radius * dpr) {
 					isOverNode = true;
-					setHoveredNode(node.competitor);
+
+					// Calculate voting stats for this competitor
+					const votingStats = calculateVotingStats(node.competitor.ID);
+
+					// Enhance the competitor object with voting stats
+					const enhancedCompetitor = {
+						...node.competitor,
+						votingStats
+					};
+
+					setHoveredNode(enhancedCompetitor);
 					setTooltipPos({
 						x: node.x,
 						y: node.y
@@ -311,17 +440,17 @@ const VotingGraph = ({ competitors, votes, submissions }) => {
 			canvas.removeEventListener('click', handleCanvasClick);
 			canvas.removeEventListener('mousemove', handleCanvasMouseMove);
 		};
-	}, [competitors, votes, submissions, hoveredNode, isMobile]);
+	}, [competitors, votes, submissions, hoveredNode, isMobile, focusedCompetitorId]);
 
 	// Draw legend function
 	const drawLegend = (ctx, width, height) => {
-		const legendX = width - 200;
-		const legendY = height - 100;
-		const legendWidth = 190;
-		const legendHeight = 80;
+		const legendX = width - 240;
+		const legendY = height - 140;
+		const legendWidth = 230;
+		const legendHeight = 130;
 
 		// Draw legend background
-		ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+		ctx.fillStyle = 'rgba(255, 255, 255, 0.95)';
 		ctx.fillRect(legendX, legendY, legendWidth, legendHeight);
 		ctx.strokeStyle = 'rgba(0, 0, 0, 0.2)';
 		ctx.lineWidth = 1;
@@ -337,29 +466,71 @@ const VotingGraph = ({ competitors, votes, submissions }) => {
 		ctx.fillStyle = '#191414';
 		ctx.font = '10px Arial';
 
-		// Draw thickness samples
+		// Draw thickness samples with colored arrows
 		const lineY1 = legendY + 35;
 		const lineY2 = legendY + 55;
+		const lineY3 = legendY + 75;
+		const lineY4 = legendY + 95;
 		const lineX1 = legendX + 20;
 		const lineX2 = legendX + 80;
 
-		// Thin line
+		// Example colors for legend (first few from the array)
+		const exampleColors = ['#FF0000', '#00FF00', '#0000FF'];
+
+		// Thin line with small colored arrow
 		ctx.beginPath();
 		ctx.moveTo(lineX1, lineY1);
 		ctx.lineTo(lineX2, lineY1);
-		ctx.strokeStyle = 'rgba(146, 28, 189, 0.3)';
+		ctx.strokeStyle = 'rgba(255, 0, 0, 0.5)';
 		ctx.lineWidth = 1;
 		ctx.stroke();
-		ctx.fillText('Few votes exchanged', lineX2 + 5, lineY1 + 3);
 
-		// Thick line
+		// Small colored arrow
+		const smallArrowSize = 6;
+		const smallArrowX = lineX2 - 5;
+		ctx.beginPath();
+		ctx.moveTo(smallArrowX, lineY1);
+		ctx.lineTo(smallArrowX - smallArrowSize, lineY1 - 3);
+		ctx.lineTo(smallArrowX - smallArrowSize * 0.6, lineY1);
+		ctx.lineTo(smallArrowX - smallArrowSize, lineY1 + 3);
+		ctx.closePath();
+		ctx.fillStyle = 'rgba(255, 0, 0, 0.8)';
+		ctx.fill();
+
+		ctx.fillStyle = '#191414';
+		ctx.fillText('Few votes given', lineX2 + 10, lineY1 + 3);
+
+		// Thick line with large colored arrow
 		ctx.beginPath();
 		ctx.moveTo(lineX1, lineY2);
 		ctx.lineTo(lineX2, lineY2);
-		ctx.strokeStyle = 'rgba(146, 28, 189, 0.9)';
+		ctx.strokeStyle = 'rgba(0, 255, 0, 0.9)';
 		ctx.lineWidth = 5;
 		ctx.stroke();
-		ctx.fillText('Many votes exchanged', lineX2 + 5, lineY2 + 3);
+
+		// Large colored arrow
+		const largeArrowSize = 10;
+		const largeArrowX = lineX2 - 5;
+		ctx.beginPath();
+		ctx.moveTo(largeArrowX, lineY2);
+		ctx.lineTo(largeArrowX - largeArrowSize, lineY2 - 4);
+		ctx.lineTo(largeArrowX - largeArrowSize * 0.6, lineY2);
+		ctx.lineTo(largeArrowX - largeArrowSize, lineY2 + 4);
+		ctx.closePath();
+		ctx.fillStyle = 'rgba(0, 255, 0, 1.0)';
+		ctx.fill();
+
+		ctx.fillStyle = '#191414';
+		ctx.fillText('Many votes given', lineX2 + 10, lineY2 + 3);
+
+		// Directional explanation
+		ctx.fillStyle = '#191414';
+		ctx.font = 'bold 9px Arial';
+		ctx.fillText('→ Arrow color = voter, direction = recipient', legendX + 10, lineY3 + 3);
+
+		// Additional explanation
+		ctx.font = '9px Arial';
+		ctx.fillText('Click competitor to focus their arrows only', legendX + 10, lineY4 + 3);
 
 	};
 
@@ -377,7 +548,7 @@ const VotingGraph = ({ competitors, votes, submissions }) => {
 				</Typography>
 
 				<Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-					Visual representation of voting relationships between competitors. Thicker, darker lines indicate more votes exchanged
+					Visual representation of voting relationships between competitors. Thicker, darker lines indicate more votes exchanged, with arrows showing the direction of votes (who voted for whom). Each competitor has a unique arrow color. Click any competitor to focus on their voting patterns (click again or click empty space to clear focus). Hover over competitors to see detailed voting statistics.
 				</Typography>
 
 				<Box sx={{
@@ -401,8 +572,27 @@ const VotingGraph = ({ competitors, votes, submissions }) => {
 						<Tooltip
 							open={true}
 							title={
-								<Box sx={{ p: 1 }}>
-									<Typography variant="subtitle2">{hoveredNode.Name}</Typography>
+								<Box sx={{ p: 1, minWidth: 200 }}>
+									<Typography variant="subtitle2" sx={{ fontWeight: 'bold', mb: 1 }}>
+										{hoveredNode.Name}
+									</Typography>
+
+									{hoveredNode.votingStats?.mostVotedFor && (
+										<Box sx={{ mb: 0 }}>
+											<Typography variant="caption" sx={{ fontWeight: 'bold', color: 'black' }}>
+												Most votes given to:
+											</Typography>
+											<Typography variant="body2" sx={{ fontSize: '0.85rem', color: 'black' }}>
+												{hoveredNode.votingStats.mostVotedFor.name} ({hoveredNode.votingStats.mostVotedFor.points} votes)
+											</Typography>
+										</Box>
+									)}
+
+									{!hoveredNode.votingStats?.mostVotedFor && (
+										<Typography variant="caption" sx={{ fontStyle: 'italic', color: 'text.secondary' }}>
+											No voting data available
+										</Typography>
+									)}
 								</Box>
 							}
 							arrow
@@ -425,6 +615,8 @@ const VotingGraph = ({ competitors, votes, submissions }) => {
 										bgcolor: 'white',
 										color: 'black',
 										boxShadow: 2,
+										border: '1px solid #ddd',
+										maxWidth: 300,
 										'& .MuiTooltip-arrow': {
 											color: 'white',
 										},
@@ -445,6 +637,89 @@ const VotingGraph = ({ competitors, votes, submissions }) => {
 							/>
 						</Tooltip>
 					)}
+				</Box>
+
+				{/* Competitor Color Legend */}
+				<Box sx={{ mt: 2, p: 2, bgcolor: 'grey.50', borderRadius: 1 }}>
+					<Typography variant="subtitle2" sx={{ fontWeight: 'bold', mb: 1 }}>
+						Competitor Arrow Colors:
+					</Typography>
+					<Box sx={{
+						display: 'flex',
+						flexWrap: 'wrap',
+						gap: 1.5,
+						justifyContent: 'center'
+					}}>
+						{(() => {
+							const colors = [
+								'#FF0000', '#00FF00', '#0000FF', '#FFFF00', '#FF00FF', '#00FFFF', '#800000', '#008000', '#000080', '#808000', '#800080', '#008080', '#FFA500', '#FFC0CB', '#A52A2A', '#808080', '#000000', '#DC143C', '#FFD700', '#4B0082', '#FF6347', '#32CD32', '#87CEEB', '#DDA0DD', '#F0E68C'
+							];
+
+							// Filter to only show competitors that appear in the graph
+							const activeCompetitorIds = new Set();
+							submissions.forEach(submission => {
+								activeCompetitorIds.add(submission['Submitter ID']);
+							});
+							votes.forEach(vote => {
+								activeCompetitorIds.add(vote['Voter ID']);
+							});
+							const activeCompetitors = competitors.filter(c => activeCompetitorIds.has(c.ID));
+
+							return activeCompetitors?.map((competitor, index) => {
+								if (!competitor || !competitor.Name) return null;
+								const colorIndex = index % colors.length;
+
+								return (
+									<Box
+										key={competitor.ID || index}
+										sx={{
+											display: 'flex',
+											alignItems: 'center',
+											gap: 0.5,
+											minWidth: 'fit-content'
+										}}
+									>
+										{/* Arrow indicator */}
+										<Box
+											sx={{
+												display: 'flex',
+												alignItems: 'center',
+												flexShrink: 0
+											}}
+										>
+											<Box
+												sx={{
+													width: 16,
+													height: 3,
+													backgroundColor: colors[colorIndex],
+													borderRadius: 1
+												}}
+											/>
+											<Box
+												sx={{
+													width: 0,
+													height: 0,
+													borderLeft: '6px solid ' + colors[colorIndex],
+													borderTop: '4px solid transparent',
+													borderBottom: '4px solid transparent',
+													ml: -0.5
+												}}
+											/>
+										</Box>
+										<Typography
+											variant="caption"
+											sx={{
+												fontSize: { xs: '0.7rem', sm: '0.75rem' },
+												whiteSpace: 'nowrap'
+											}}
+										>
+											{competitor.Name}
+										</Typography>
+									</Box>
+								);
+							}).filter(Boolean);
+						})()}
+					</Box>
 				</Box>
 			</CardContent>
 		</Card>
