@@ -2,6 +2,10 @@
 
 A comprehensive React dashboard that displays insights, analytics, and "superlatives" from Music League data. This project analyzes voting patterns, submissions, and performances of competitors in a Music League and presents them in an engaging, interactive dashboard format with detailed visualizations and explanations.
 
+## Live Site
+
+https://www.musicleaguewrapped.com
+
 ## Features
 
 ### Superlatives & Awards
