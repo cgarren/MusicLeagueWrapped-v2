@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Container, Typography, Grid, Box, Tabs, Tab, useMediaQuery, useTheme, Card, CardContent, Paper, Modal, IconButton } from '@mui/material';
 import { Close } from '@mui/icons-material';
-import { ScatterChart, Scatter, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, LineChart, Line, Legend } from 'recharts';
+import { ScatterChart, Scatter, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, LineChart, Line } from 'recharts';
 
 // Individual award components
 import SuperlativeCard from './SuperlativeCard';
@@ -57,6 +57,8 @@ const DashboardContent = ({
 
 	// State for chart tabs
 	const [chartTabValue, setChartTabValue] = useState(0);
+
+	// Interaction state for performance charts
 
 	const handleRoundClick = (roundData, roundNumber) => {
 		setSelectedRound({ roundData, roundNumber });
@@ -148,6 +150,16 @@ const DashboardContent = ({
 
 		return chartData;
 	};
+
+	// Helper: get filtered competitor list (all competitors shown; Top N control removed)
+	const getFilteredCompetitors = (chartData) => {
+		const names = (data?.competitors || [])
+			.filter(c => c && c.Name)
+			.map(c => c.Name);
+		return new Set(names);
+	};
+
+	//
 
 	return (
 		<Container maxWidth="xl" sx={{ mt: 4, mb: 4, px: { xs: 2, sm: 3, md: 4 } }}>
@@ -493,6 +505,7 @@ const DashboardContent = ({
 									<Tab label="Total Votes" {...a11yProps(1)} />
 								</Tabs>
 							</Box>
+
 							{/* Chart Tab Panels */}
 							<TabPanel value={chartTabValue} index={0}>
 								<Box sx={{
@@ -505,7 +518,7 @@ const DashboardContent = ({
 											data={generatePerformanceData(false)}
 											margin={{
 												top: 20,
-												right: isMediumScreen ? 20 : 80,
+												right: isMediumScreen ? 40 : 120,
 												bottom: isMediumScreen ? 40 : 60,
 												left: isMediumScreen ? 10 : 20,
 											}}
@@ -609,27 +622,38 @@ const DashboardContent = ({
 													return null;
 												}}
 											/>
-											{/* Generate a line for each competitor */}
+											{/* Generate a line for each competitor with hover/click highlight and end labels */}
 											{(() => {
 												const colors = [
 													'#FF0000', '#00FF00', '#0000FF', '#FFFF00', '#FF00FF', '#00FFFF', '#800000', '#008000', '#000080', '#808000', '#800080', '#008080', '#FFA500', '#FFC0CB', '#A52A2A', '#808080', '#000000', '#DC143C', '#FFD700', '#4B0082', '#FF6347', '#32CD32', '#87CEEB', '#DDA0DD', '#F0E68C'
 												];
 
+												const chartData = generatePerformanceData(false);
+												const visibleSet = getFilteredCompetitors(chartData);
+												// Removed: end label metadata not used
+
 												return data?.competitors?.map((competitor, index) => {
 													if (!competitor || !competitor.Name) return null;
 													const colorIndex = index % colors.length;
+													const name = competitor.Name;
+													if (!visibleSet.has(name)) return null;
+
+
 
 													return (
 														<Line
 															key={competitor.ID || index}
 															type="linear"
-															dataKey={competitor.Name}
+															dataKey={name}
 															stroke={colors[colorIndex]}
-															strokeWidth={2}
-															dot={{ fill: colors[colorIndex], strokeWidth: 2, r: 4 }}
+															strokeWidth={1.5}
+															strokeOpacity={1}
+															dot={false}
 															connectNulls={false}
-															activeDot={{ r: 6, strokeWidth: 2 }}
-														/>
+															activeDot={{ r: 5, strokeWidth: 2 }}
+														>
+															{/* Name end labels removed */}
+														</Line>
 													);
 												}).filter(Boolean);
 											})()}
@@ -649,7 +673,7 @@ const DashboardContent = ({
 											data={generatePerformanceData(true)}
 											margin={{
 												top: 20,
-												right: isMediumScreen ? 20 : 80,
+												right: isMediumScreen ? 40 : 120,
 												bottom: isMediumScreen ? 40 : 60,
 												left: isMediumScreen ? 10 : 20,
 											}}
@@ -748,27 +772,38 @@ const DashboardContent = ({
 													return null;
 												}}
 											/>
-											{/* Generate a line for each competitor */}
+											{/* Generate a line for each competitor with hover/click highlight and end labels */}
 											{(() => {
 												const colors = [
 													'#FF0000', '#00FF00', '#0000FF', '#FFFF00', '#FF00FF', '#00FFFF', '#800000', '#008000', '#000080', '#808000', '#800080', '#008080', '#FFA500', '#FFC0CB', '#A52A2A', '#808080', '#000000', '#DC143C', '#FFD700', '#4B0082', '#FF6347', '#32CD32', '#87CEEB', '#DDA0DD', '#F0E68C'
 												];
 
+												const chartData = generatePerformanceData(true);
+												const visibleSet = getFilteredCompetitors(chartData);
+												// Removed: end label metadata not used
+
 												return data?.competitors?.map((competitor, index) => {
 													if (!competitor || !competitor.Name) return null;
 													const colorIndex = index % colors.length;
+													const name = competitor.Name;
+													if (!visibleSet.has(name)) return null;
+
+
 
 													return (
 														<Line
 															key={competitor.ID || index}
 															type="linear"
-															dataKey={competitor.Name}
+															dataKey={name}
 															stroke={colors[colorIndex]}
-															strokeWidth={2}
-															dot={{ fill: colors[colorIndex], strokeWidth: 2, r: 4 }}
+															strokeWidth={1.5}
+															strokeOpacity={1}
+															dot={false}
 															connectNulls={true}
-															activeDot={{ r: 6, strokeWidth: 2 }}
-														/>
+															activeDot={{ r: 5, strokeWidth: 2 }}
+														>
+															{/* Name end labels removed */}
+														</Line>
 													);
 												}).filter(Boolean);
 											})()}
