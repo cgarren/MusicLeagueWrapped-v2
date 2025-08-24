@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Container, Typography, Grid, Box, Tabs, Tab, useMediaQuery, useTheme, Card, CardContent, Paper, Modal, IconButton } from '@mui/material';
 import { Close } from '@mui/icons-material';
-import { ScatterChart, Scatter, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, LineChart, Line, Legend } from 'recharts';
+import { ScatterChart, Scatter, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, LineChart, Line } from 'recharts';
 
 // Individual award components
 import SuperlativeCard from './SuperlativeCard';
@@ -55,6 +55,11 @@ const DashboardContent = ({
 	const [selectedRound, setSelectedRound] = useState(null);
 	const [modalOpen, setModalOpen] = useState(false);
 
+	// State for chart tabs
+	const [chartTabValue, setChartTabValue] = useState(0);
+
+	// Interaction state for performance charts
+
 	const handleRoundClick = (roundData, roundNumber) => {
 		setSelectedRound({ roundData, roundNumber });
 		setModalOpen(true);
@@ -64,6 +69,97 @@ const DashboardContent = ({
 		setModalOpen(false);
 		setSelectedRound(null);
 	};
+
+	const handleChartTabChange = (event, newValue) => {
+		setChartTabValue(newValue);
+	};
+
+	// Function to generate performance data (round-by-round or cumulative)
+	const generatePerformanceData = (isCumulative = false) => {
+		if (!data?.submissions || !data?.votes || !data?.competitors || !data?.rounds) return [];
+
+		// Calculate vote totals for each submission
+		const submissionVotes = {};
+		data.votes.forEach(vote => {
+			const uri = vote['Spotify URI'];
+			submissionVotes[uri] = (submissionVotes[uri] || 0) + parseInt(vote['Points Assigned'] || 0);
+		});
+
+		// Create a map of round IDs to round numbers for proper ordering
+		const roundOrder = {};
+		data.rounds.forEach((round, index) => {
+			roundOrder[round.ID] = index + 1;
+		});
+
+		// Group submissions by competitor and round
+		const competitorRoundData = {};
+		data.submissions.forEach(submission => {
+			const competitorId = submission['Submitter ID'];
+			const roundId = submission['Round ID'];
+			const roundNumber = roundOrder[roundId];
+			const votes = submissionVotes[submission['Spotify URI']] || 0;
+
+			if (!competitorRoundData[competitorId]) {
+				competitorRoundData[competitorId] = {};
+			}
+			competitorRoundData[competitorId][roundNumber] = votes;
+		});
+
+		// Create chart data structure
+		const chartData = [];
+		const maxRounds = Math.max(...data.rounds.map((_, index) => index + 1));
+
+		// Track cumulative totals for each competitor
+		const cumulativeTotals = {};
+		data.competitors.forEach(competitor => {
+			if (competitor && competitor.Name) {
+				cumulativeTotals[competitor.Name] = 0;
+			}
+		});
+
+		for (let round = 1; round <= maxRounds; round++) {
+			const roundData = { round };
+
+			data.competitors.forEach(competitor => {
+				if (competitor && competitor.Name) {
+					const hasSubmission = competitorRoundData[competitor.ID]?.hasOwnProperty(round);
+					if (hasSubmission) {
+						const roundVotes = competitorRoundData[competitor.ID][round];
+						if (isCumulative) {
+							// Add to cumulative total
+							cumulativeTotals[competitor.Name] += roundVotes;
+							roundData[competitor.Name] = cumulativeTotals[competitor.Name];
+						} else {
+							// Use round votes directly
+							roundData[competitor.Name] = roundVotes;
+						}
+					} else {
+						if (isCumulative) {
+							// For cumulative, continue with previous total (no gap)
+							roundData[competitor.Name] = cumulativeTotals[competitor.Name];
+						} else {
+							// For round-by-round, use null to create gap
+							roundData[competitor.Name] = null;
+						}
+					}
+				}
+			});
+
+			chartData.push(roundData);
+		}
+
+		return chartData;
+	};
+
+	// Helper: get filtered competitor list (all competitors shown; Top N control removed)
+	const getFilteredCompetitors = (chartData) => {
+		const names = (data?.competitors || [])
+			.filter(c => c && c.Name)
+			.map(c => c.Name);
+		return new Set(names);
+	};
+
+	//
 
 	return (
 		<Container maxWidth="xl" sx={{ mt: 4, mb: 4, px: { xs: 2, sm: 3, md: 4 } }}>
@@ -399,209 +495,336 @@ const DashboardContent = ({
 								📈 Performance Over Time
 							</Typography>
 							<Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
-								Track how each competitor's performance evolved throughout the season. Each line represents a competitor's vote totals per round.
+								Track how each competitor's performance evolved throughout the season. Switch between round-by-round votes and cumulative totals.
 							</Typography>
-							<Box sx={{
-								width: '100%',
-								height: { xs: 400, sm: 450, md: 500 },
-								minHeight: { xs: 350, sm: 400 }
-							}}>
-								<ResponsiveContainer width="100%" height="100%">
-									<LineChart
-										data={(() => {
-											// Create performance over time data
-											if (!data?.submissions || !data?.votes || !data?.competitors || !data?.rounds) return [];
 
-											// Calculate vote totals for each submission
-											const submissionVotes = {};
-											data.votes.forEach(vote => {
-												const uri = vote['Spotify URI'];
-												submissionVotes[uri] = (submissionVotes[uri] || 0) + parseInt(vote['Points Assigned'] || 0);
-											});
+							{/* Chart Tabs */}
+							<Box sx={{ borderBottom: 1, borderColor: 'divider', mb: 3 }}>
+								<Tabs value={chartTabValue} onChange={handleChartTabChange} aria-label="chart tabs">
+									<Tab label="Round-by-Round Votes" {...a11yProps(0)} />
+									<Tab label="Total Votes" {...a11yProps(1)} />
+								</Tabs>
+							</Box>
 
-											// Create a map of round IDs to round numbers for proper ordering
-											const roundOrder = {};
-											data.rounds.forEach((round, index) => {
-												roundOrder[round.ID] = index + 1;
-											});
-
-											// Group submissions by competitor and round
-											const competitorRoundData = {};
-											data.submissions.forEach(submission => {
-												const competitorId = submission['Submitter ID'];
-												const roundId = submission['Round ID'];
-												const roundNumber = roundOrder[roundId];
-												const votes = submissionVotes[submission['Spotify URI']] || 0; // This will be 0 if no votes, which is valid
-
-												if (!competitorRoundData[competitorId]) {
-													competitorRoundData[competitorId] = {};
+							{/* Chart Tab Panels */}
+							<TabPanel value={chartTabValue} index={0}>
+								<Box sx={{
+									width: '100%',
+									height: { xs: 400, sm: 450, md: 500 },
+									minHeight: { xs: 350, sm: 400 }
+								}}>
+									<ResponsiveContainer width="100%" height="100%">
+										<LineChart
+											data={generatePerformanceData(false)}
+											margin={{
+												top: 20,
+												right: isMediumScreen ? 40 : 120,
+												bottom: isMediumScreen ? 40 : 60,
+												left: isMediumScreen ? 10 : 20,
+											}}
+											onClick={(data) => {
+												if (data && data.activeLabel) {
+													handleRoundClick(data.activePayload, data.activeLabel);
 												}
-												competitorRoundData[competitorId][roundNumber] = votes; // Store actual vote count, including 0
-											});
-
-											// Create chart data structure
-											const chartData = [];
-											const maxRounds = Math.max(...data.rounds.map((_, index) => index + 1));
-
-											for (let round = 1; round <= maxRounds; round++) {
-												const roundData = { round };
-
-												data.competitors.forEach(competitor => {
-													if (competitor && competitor.Name) {
-														// Check if competitor has data for this round
-														const hasSubmission = competitorRoundData[competitor.ID]?.hasOwnProperty(round);
-														if (hasSubmission) {
-															// They submitted, use actual vote count (could be 0)
-															roundData[competitor.Name] = competitorRoundData[competitor.ID][round];
-														} else {
-															// They didn't submit, use null to create gap in line
-															roundData[competitor.Name] = null;
-														}
+											}}
+										>
+											<CartesianGrid
+												strokeDasharray="3 3"
+												stroke={theme.palette.divider}
+												opacity={0.3}
+											/>
+											<XAxis
+												dataKey="round"
+												type="number"
+												domain={['dataMin', 'dataMax']}
+												tick={{ fill: theme.palette.text.secondary, fontSize: isMediumScreen ? 10 : 12 }}
+												label={{
+													value: 'Round',
+													position: 'insideBottom',
+													offset: isMediumScreen ? -5 : -10,
+													style: {
+														textAnchor: 'middle',
+														fill: theme.palette.text.primary,
+														fontSize: isMediumScreen ? '12px' : '14px',
+														fontWeight: 'bold'
 													}
-												});
+												}}
+											/>
+											<YAxis
+												tick={{ fill: theme.palette.text.secondary, fontSize: isMediumScreen ? 10 : 12 }}
+												label={{
+													value: 'Votes Received',
+													angle: -90,
+													position: 'insideLeft',
+													style: {
+														textAnchor: 'middle',
+														fill: theme.palette.text.primary,
+														fontSize: isMediumScreen ? '12px' : '14px',
+														fontWeight: 'bold'
+													}
+												}}
+											/>
+											<Tooltip
+												content={({ active, payload, label }) => {
+													if (active && payload && payload.length) {
+														const hasData = payload.some(entry => entry.value !== null);
+														if (!hasData) return null;
 
-												chartData.push(roundData);
-											}
+														// Get round info
+														const roundNumber = label;
+														const currentRound = data.rounds?.[roundNumber - 1];
 
-											return chartData;
-										})()}
-										margin={{
-											top: 20,
-											right: isMediumScreen ? 20 : 80,
-											bottom: isMediumScreen ? 40 : 60,
-											left: isMediumScreen ? 10 : 20,
-										}}
-										onClick={(data) => {
-											if (data && data.activeLabel) {
-												handleRoundClick(data.activePayload, data.activeLabel);
-											}
-										}}
-									>
-										<CartesianGrid
-											strokeDasharray="3 3"
-											stroke={theme.palette.divider}
-											opacity={0.3}
-										/>
-										<XAxis
-											dataKey="round"
-											type="number"
-											domain={['dataMin', 'dataMax']}
-											tick={{ fill: theme.palette.text.secondary, fontSize: isMediumScreen ? 10 : 12 }}
-											label={{
-												value: 'Round',
-												position: 'insideBottom',
-												offset: isMediumScreen ? -5 : -10,
-												style: {
-													textAnchor: 'middle',
-													fill: theme.palette.text.primary,
-													fontSize: isMediumScreen ? '12px' : '14px',
-													fontWeight: 'bold'
-												}
-											}}
-										/>
-										<YAxis
-											tick={{ fill: theme.palette.text.secondary, fontSize: isMediumScreen ? 10 : 12 }}
-											label={{
-												value: 'Votes Received',
-												angle: -90,
-												position: 'insideLeft',
-												style: {
-													textAnchor: 'middle',
-													fill: theme.palette.text.primary,
-													fontSize: isMediumScreen ? '12px' : '14px',
-													fontWeight: 'bold'
-												}
-											}}
-										/>
-										<Tooltip
-											content={({ active, payload, label }) => {
-												if (active && payload && payload.length) {
-													const hasData = payload.some(entry => entry.value !== null);
-													if (!hasData) return null;
+														// Find the winner(s) (highest votes)
+														const competitorsWithVotes = payload
+															.filter(entry => entry.value !== null)
+															.sort((a, b) => (b.value || 0) - (a.value || 0));
 
-													// Get round info
-													const roundNumber = label;
-													const currentRound = data.rounds?.[roundNumber - 1];
+														const topScore = competitorsWithVotes[0]?.value;
+														const winners = competitorsWithVotes.filter(entry => entry.value === topScore);
+														const isMultipleWinners = winners.length > 1;
 
-													// Find the winner (highest votes)
-													const competitorsWithVotes = payload
-														.filter(entry => entry.value !== null)
-														.sort((a, b) => (b.value || 0) - (a.value || 0));
+														return (
+															<Paper sx={{
+																p: 1.5,
+																backgroundColor: 'white',
+																border: `2px solid ${theme.palette.primary.main}`,
+																fontSize: '0.875rem',
+																maxWidth: '280px'
+															}}>
+																<Typography variant="subtitle2" sx={{
+																	fontWeight: 'bold',
+																	color: theme.palette.primary.main,
+																	mb: 0.5
+																}}>
+																	{currentRound?.Name || `Round ${label}`}
+																</Typography>
+																{winners.length > 0 && (
+																	<Typography variant="body2" sx={{
+																		mb: 0.5,
+																		color: 'text.primary'
+																	}}>
+																		{isMultipleWinners ? 'Tied Winners' : 'Winner'}: {
+																			isMultipleWinners
+																				? winners.map(w => w.dataKey).join(', ')
+																				: winners[0].dataKey
+																		} ({topScore} votes)
+																	</Typography>
+																)}
+																<Typography variant="caption" sx={{
+																	color: 'text.secondary',
+																	fontStyle: 'italic'
+																}}>
+																	Click to see detailed results
+																</Typography>
+															</Paper>
+														);
+													}
+													return null;
+												}}
+											/>
+											{/* Generate a line for each competitor with hover/click highlight and end labels */}
+											{(() => {
+												const colors = [
+													'#FF0000', '#00FF00', '#0000FF', '#FFFF00', '#FF00FF', '#00FFFF', '#800000', '#008000', '#000080', '#808000', '#800080', '#008080', '#FFA500', '#FFC0CB', '#A52A2A', '#808080', '#000000', '#DC143C', '#FFD700', '#4B0082', '#FF6347', '#32CD32', '#87CEEB', '#DDA0DD', '#F0E68C'
+												];
 
-													const winner = competitorsWithVotes[0];
-													const isMultipleWinners = competitorsWithVotes.length > 1 &&
-														competitorsWithVotes[1]?.value === winner?.value;
+												const chartData = generatePerformanceData(false);
+												const visibleSet = getFilteredCompetitors(chartData);
+												// Removed: end label metadata not used
+
+												return data?.competitors?.map((competitor, index) => {
+													if (!competitor || !competitor.Name) return null;
+													const colorIndex = index % colors.length;
+													const name = competitor.Name;
+													if (!visibleSet.has(name)) return null;
+
+
 
 													return (
-														<Paper sx={{
-															p: 1.5,
-															backgroundColor: 'white',
-															border: `2px solid ${theme.palette.primary.main}`,
-															fontSize: '0.875rem',
-															maxWidth: '280px'
-														}}>
-															<Typography variant="subtitle2" sx={{
-																fontWeight: 'bold',
-																color: theme.palette.primary.main,
-																mb: 0.5
-															}}>
-																{currentRound?.Name || `Round ${label}`}
-															</Typography>
-															{winner && (
-																<Typography variant="body2" sx={{
-																	mb: 0.5,
-																	color: 'text.primary'
-																}}>
-																	{isMultipleWinners ? 'Tied Winners' : 'Winner'}: {winner.dataKey} ({winner.value} votes)
-																</Typography>
-															)}
-															<Typography variant="caption" sx={{
-																color: 'text.secondary',
-																fontStyle: 'italic'
-															}}>
-																Click to see detailed results
-															</Typography>
-														</Paper>
+														<Line
+															key={competitor.ID || index}
+															type="linear"
+															dataKey={name}
+															stroke={colors[colorIndex]}
+															strokeWidth={1.5}
+															strokeOpacity={1}
+															dot={false}
+															connectNulls={false}
+															activeDot={{ r: 5, strokeWidth: 2 }}
+														>
+															{/* Name end labels removed */}
+														</Line>
 													);
-												}
-												return null;
+												}).filter(Boolean);
+											})()}
+										</LineChart>
+									</ResponsiveContainer>
+								</Box>
+							</TabPanel>
+
+							<TabPanel value={chartTabValue} index={1}>
+								<Box sx={{
+									width: '100%',
+									height: { xs: 400, sm: 450, md: 500 },
+									minHeight: { xs: 350, sm: 400 }
+								}}>
+									<ResponsiveContainer width="100%" height="100%">
+										<LineChart
+											data={generatePerformanceData(true)}
+											margin={{
+												top: 20,
+												right: isMediumScreen ? 40 : 120,
+												bottom: isMediumScreen ? 40 : 60,
+												left: isMediumScreen ? 10 : 20,
 											}}
-										/>
-										{/* Generate a line for each competitor */}
-										{(() => {
-											const colors = [
-												'#FF0000', '#00FF00', '#0000FF', '#FFFF00', '#FF00FF', '#00FFFF', '#800000', '#008000', '#000080', '#808000', '#800080', '#008080', '#FFA500', '#FFC0CB', '#A52A2A', '#808080', '#000000', '#DC143C', '#FFD700', '#4B0082', '#FF6347', '#32CD32', '#87CEEB', '#DDA0DD', '#F0E68C'
-											];
+										>
+											<CartesianGrid
+												strokeDasharray="3 3"
+												stroke={theme.palette.divider}
+												opacity={0.3}
+											/>
+											<XAxis
+												dataKey="round"
+												type="number"
+												domain={['dataMin', 'dataMax']}
+												tick={{ fill: theme.palette.text.secondary, fontSize: isMediumScreen ? 10 : 12 }}
+												label={{
+													value: 'Round',
+													position: 'insideBottom',
+													offset: isMediumScreen ? -5 : -10,
+													style: {
+														textAnchor: 'middle',
+														fill: theme.palette.text.primary,
+														fontSize: isMediumScreen ? '12px' : '14px',
+														fontWeight: 'bold'
+													}
+												}}
+											/>
+											<YAxis
+												tick={{ fill: theme.palette.text.secondary, fontSize: isMediumScreen ? 10 : 12 }}
+												label={{
+													value: 'Total Votes Received',
+													angle: -90,
+													position: 'insideLeft',
+													style: {
+														textAnchor: 'middle',
+														fill: theme.palette.text.primary,
+														fontSize: isMediumScreen ? '12px' : '14px',
+														fontWeight: 'bold'
+													}
+												}}
+											/>
+											<Tooltip
+												content={({ active, payload, label }) => {
+													if (active && payload && payload.length) {
+														const hasData = payload.some(entry => entry.value !== null && entry.value !== undefined);
+														if (!hasData) return null;
 
-											return data?.competitors?.map((competitor, index) => {
-												if (!competitor || !competitor.Name) return null;
-												const colorIndex = index % colors.length;
+														// Get round info
+														const roundNumber = label;
+														const currentRound = data.rounds?.[roundNumber - 1];
 
-												return (
-													<Line
-														key={competitor.ID || index}
-														type="linear"
-														dataKey={competitor.Name}
-														stroke={colors[colorIndex]}
-														strokeWidth={2}
-														dot={{ fill: colors[colorIndex], strokeWidth: 2, r: 4 }}
-														connectNulls={false}
-														activeDot={{ r: 6, strokeWidth: 2 }}
-													/>
-												);
-											}).filter(Boolean);
-										})()}
-									</LineChart>
-								</ResponsiveContainer>
-							</Box>
+														// Find the leader(s) (highest cumulative votes)
+														const competitorsWithVotes = payload
+															.filter(entry => entry.value !== null && entry.value !== undefined)
+															.sort((a, b) => (b.value || 0) - (a.value || 0));
+
+														const topScore = competitorsWithVotes[0]?.value;
+														const leaders = competitorsWithVotes.filter(entry => entry.value === topScore);
+														const isMultipleLeaders = leaders.length > 1;
+
+														return (
+															<Paper sx={{
+																p: 1.5,
+																backgroundColor: 'white',
+																border: `2px solid ${theme.palette.primary.main}`,
+																fontSize: '0.875rem',
+																maxWidth: '280px'
+															}}>
+																<Typography variant="subtitle2" sx={{
+																	fontWeight: 'bold',
+																	color: theme.palette.primary.main,
+																	mb: 0.5
+																}}>
+																	{currentRound?.Name || `Round ${label}`}
+																</Typography>
+																{leaders.length > 0 && (
+																	<Typography variant="body2" sx={{
+																		mb: 0.5,
+																		color: 'text.primary'
+																	}}>
+																		{isMultipleLeaders ? 'Tied Leaders' : 'Leader'}: {
+																			isMultipleLeaders
+																				? leaders.map(l => l.dataKey).join(', ')
+																				: leaders[0].dataKey
+																		} ({topScore} total votes)
+																	</Typography>
+																)}
+																<Typography variant="caption" sx={{
+																	color: 'text.secondary',
+																	fontStyle: 'italic'
+																}}>
+																	Cumulative totals through this round
+																</Typography>
+															</Paper>
+														);
+													}
+													return null;
+												}}
+											/>
+											{/* Generate a line for each competitor with hover/click highlight and end labels */}
+											{(() => {
+												const colors = [
+													'#FF0000', '#00FF00', '#0000FF', '#FFFF00', '#FF00FF', '#00FFFF', '#800000', '#008000', '#000080', '#808000', '#800080', '#008080', '#FFA500', '#FFC0CB', '#A52A2A', '#808080', '#000000', '#DC143C', '#FFD700', '#4B0082', '#FF6347', '#32CD32', '#87CEEB', '#DDA0DD', '#F0E68C'
+												];
+
+												const chartData = generatePerformanceData(true);
+												const visibleSet = getFilteredCompetitors(chartData);
+												// Removed: end label metadata not used
+
+												return data?.competitors?.map((competitor, index) => {
+													if (!competitor || !competitor.Name) return null;
+													const colorIndex = index % colors.length;
+													const name = competitor.Name;
+													if (!visibleSet.has(name)) return null;
+
+
+
+													return (
+														<Line
+															key={competitor.ID || index}
+															type="linear"
+															dataKey={name}
+															stroke={colors[colorIndex]}
+															strokeWidth={1.5}
+															strokeOpacity={1}
+															dot={false}
+															connectNulls={true}
+															activeDot={{ r: 5, strokeWidth: 2 }}
+														>
+															{/* Name end labels removed */}
+														</Line>
+													);
+												}).filter(Boolean);
+											})()}
+										</LineChart>
+									</ResponsiveContainer>
+								</Box>
+							</TabPanel>
 							<Typography variant="body2" color="text.secondary" sx={{
 								mt: 2,
 								fontStyle: 'italic',
 								fontSize: { xs: '0.75rem', sm: '0.875rem' }
 							}}>
-								{isMediumScreen ?
-									'Tap anywhere on the chart to see detailed round results. Missing points indicate no submission in that round.' :
-									'Click anywhere on the chart to see detailed round results with song information. Missing points indicate a competitor did not submit in that round.'
+								{chartTabValue === 0 ?
+									(isMediumScreen ?
+										'Tap anywhere on the chart to see detailed round results. Missing points indicate no submission in that round.' :
+										'Click anywhere on the chart to see detailed round results with song information. Missing points indicate a competitor did not submit in that round.'
+									) :
+									(isMediumScreen ?
+										'Shows cumulative vote totals over time. Lines continue smoothly even when competitors miss rounds.' :
+										'Shows cumulative vote totals accumulated over time. Lines continue smoothly even when competitors miss rounds, showing their running total.'
+									)
 								}
 							</Typography>
 
