@@ -106,6 +106,8 @@ const Dashboard = ({ league = 'suit-and-tie' }) => {
 				return 'Suit & Tie';
 			case 'amherst':
 				return 'Amherst';
+			case 'harvard-law-music-club':
+				return 'Harvard Law Music Club';
 			default:
 				return leagueId;
 		}
