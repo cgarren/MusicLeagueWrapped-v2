@@ -38,6 +38,7 @@ function App() {
 	const getLeagueFromPath = (path) => {
 		if (path === '/suit-and-tie') return 'suit-and-tie';
 		if (path === '/amherst') return 'amherst';
+		if (path === '/harvard-law-music-club') return 'harvard-law-music-club';
 		return null;
 	};
 
