@@ -573,8 +573,8 @@ const DashboardContent = ({
 														if (!hasData) return null;
 
 														// Get round info
-														const roundNumber = label;
-														const currentRound = data.rounds?.[roundNumber - 1];
+														const rn = (typeof label === 'number' && label > 0) ? label : (selectedRound?.roundNumber ?? 1);
+														const currentRound = data.rounds?.[rn - 1];
 
 														// Find the winner(s) (highest votes)
 														const competitorsWithVotes = payload
@@ -599,9 +599,9 @@ const DashboardContent = ({
 																	mb: 0.5
 																}}>
 																	{(() => {
-																		const roundNumber = selectedRound.roundNumber;
-																		const currentRound = data.rounds?.[roundNumber - 1];
-																		return currentRound?.Name || `Round ${roundNumber}`;
+																		const rn = (typeof label === 'number' && label > 0) ? label : (selectedRound?.roundNumber ?? 1);
+																		const currentRound = data.rounds?.[rn - 1];
+																		return currentRound?.Name || `Round ${rn}`;
 																	})()}
 																</Typography>
 																{winners.length > 0 && (
@@ -727,8 +727,8 @@ const DashboardContent = ({
 														if (!hasData) return null;
 
 														// Get round info
-														const roundNumber = label;
-														const currentRound = data.rounds?.[roundNumber - 1];
+														const rn = (typeof label === 'number' && label > 0) ? label : (selectedRound?.roundNumber ?? 1);
+														const currentRound = data.rounds?.[rn - 1];
 
 														// Find the leader(s) (highest cumulative votes)
 														const competitorsWithVotes = payload
@@ -753,9 +753,9 @@ const DashboardContent = ({
 																	mb: 0.5
 																}}>
 																	{(() => {
-																		const roundNumber = selectedRound.roundNumber;
-																		const currentRound = data.rounds?.[roundNumber - 1];
-																		return currentRound?.Name || `Round ${roundNumber}`;
+																		const rn = (typeof label === 'number' && label > 0) ? label : (selectedRound?.roundNumber ?? 1);
+																		const currentRound = data.rounds?.[rn - 1];
+																		return currentRound?.Name || `Round ${rn}`;
 																	})()}
 																</Typography>
 																{leaders.length > 0 && (
@@ -1571,9 +1571,9 @@ const DashboardContent = ({
 									color: theme.palette.primary.main
 								}}>
 									{(() => {
-										const roundNumber = selectedRound.roundNumber;
-										const currentRound = data.rounds?.[roundNumber - 1];
-										return currentRound?.Name || `Round ${roundNumber}`;
+										const rn = (typeof selectedRound.roundNumber === 'number' && selectedRound.roundNumber > 0) ? selectedRound.roundNumber : (selectedRound?.roundNumber ?? 1);
+										const currentRound = data.rounds?.[rn - 1];
+										return currentRound?.Name || `Round ${rn}`;
 									})()}
 								</Typography>
 								<IconButton onClick={handleModalClose} size="small">
@@ -1582,8 +1582,8 @@ const DashboardContent = ({
 							</Box>
 
 							{(() => {
-								const roundNumber = selectedRound.roundNumber;
-								const currentRound = data.rounds?.[roundNumber - 1];
+								const rn = (typeof selectedRound.roundNumber === 'number' && selectedRound.roundNumber > 0) ? selectedRound.roundNumber : (selectedRound?.roundNumber ?? 1);
+								const currentRound = data.rounds?.[rn - 1];
 
 								// Create a map of competitor submissions for this round
 								const roundSubmissions = {};

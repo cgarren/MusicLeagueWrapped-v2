@@ -121,9 +121,7 @@ const Dashboard = ({ league = 'suit-and-tie', initialSeason = 'season1' }) => {
 		);
 	}
 
-	// Get current season info for title
-	const currentSeasonInfo = availableSeasons.find(s => s.id === season);
-	const seasonTitle = currentSeasonInfo ? currentSeasonInfo.label : 'Season';
+	// Title no longer includes season
 
 	// Get league display name
 	const getLeagueDisplayName = (leagueId) => {
@@ -157,7 +155,7 @@ const Dashboard = ({ league = 'suit-and-tie', initialSeason = 'season1' }) => {
 			season={season}
 			tabValue={tabValue}
 			onTabChange={handleTabChange}
-			title={`${leagueDisplayName} Music League Wrapped - ${seasonTitle}`}
+			title={`${leagueDisplayName} Wrapped`}
 			subtitle="Insights and Awards from Music League"
 			headerContent={seasonSelector}
 		/>
