@@ -57,13 +57,37 @@ const loadCSV = async (filePath) => {
 	}
 };
 
+// Sanitize parsed CSV rows by filtering out empty rows and enforcing required fields
+const sanitizeRows = (rows, requiredKeys = []) => {
+	if (!Array.isArray(rows)) return [];
+	return rows.filter((row) => {
+		if (!row || typeof row !== 'object') return false;
+		// Drop rows with all values empty/whitespace/null
+		const hasAnyValue = Object.values(row).some((v) => v !== null && v !== undefined && String(v).trim() !== '');
+		if (!hasAnyValue) return false;
+		// Enforce required keys when provided
+		for (const key of requiredKeys) {
+			if (!(key in row)) return false;
+			const val = row[key];
+			if (val === null || val === undefined || String(val).trim() === '') return false;
+		}
+		return true;
+	});
+};
+
 // Load all datasets
 export const loadAllData = async (season = 'season1', league = 'suit-and-tie') => {
 	try {
-		const competitors = await loadCSV(`/data/${league}/${season}/competitors.csv`);
-		const rounds = await loadCSV(`/data/${league}/${season}/rounds.csv`);
-		const submissions = await loadCSV(`/data/${league}/${season}/submissions.csv`);
-		const votes = await loadCSV(`/data/${league}/${season}/votes.csv`);
+		const competitorsRaw = await loadCSV(`/data/${league}/${season}/competitors.csv`);
+		const roundsRaw = await loadCSV(`/data/${league}/${season}/rounds.csv`);
+		const submissionsRaw = await loadCSV(`/data/${league}/${season}/submissions.csv`);
+		const votesRaw = await loadCSV(`/data/${league}/${season}/votes.csv`);
+
+		// Sanitize all datasets to remove trailing/empty rows
+		const competitors = sanitizeRows(competitorsRaw, ['ID', 'Name']);
+		const rounds = sanitizeRows(roundsRaw, ['ID', 'Name']);
+		const submissions = sanitizeRows(submissionsRaw, ['Spotify URI', 'Submitter ID', 'Round ID']);
+		const votes = sanitizeRows(votesRaw, ['Voter ID', 'Round ID', 'Spotify URI']);
 
 		// Extract all Spotify URIs from submissions
 		const spotifyUris = submissions.map(submission => submission['Spotify URI']);
