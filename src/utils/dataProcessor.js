@@ -4,34 +4,33 @@ import { getTracksPopularity, extractTrackIdsFromUris } from './spotifyApi';
 // Function to get available seasons dynamically
 export const getAvailableSeasons = async (league = 'suit-and-tie') => {
 	try {
-		// Since we can't directly list directories in the browser, we'll try to fetch each season
-		// and see which ones exist. We'll try seasons 1-10 for now.
-		const maxSeasons = 10;
+		// Probe seasons progressively; stop after several consecutive misses.
 		const availableSeasons = [];
+		let index = 1;
+		let misses = 0;
+		const maxConsecutiveMisses = 3;
+		const hardStop = 100; // safety cap
 
-		for (let i = 1; i <= maxSeasons; i++) {
-			const seasonId = `season${i}`;
+		while (index <= hardStop && misses < maxConsecutiveMisses) {
+			const seasonId = `season${index}`;
 			try {
-				// Try to fetch the competitors.csv file for this season
-				const response = await fetch(`/data/${league}/${seasonId}/competitors.csv`);
-				if (response.ok) {
-					availableSeasons.push({
-						id: seasonId,
-						label: `Season ${i}`,
-						number: i
-					});
+				const res = await fetch(`/data/${league}/${seasonId}/competitors.csv`, { method: 'HEAD' });
+				if (res.ok) {
+					availableSeasons.push({ id: seasonId, label: `Season ${index}`, number: index });
+					misses = 0;
+				} else {
+					misses++;
 				}
-			} catch (error) {
-				// Season doesn't exist, continue to next
-				continue;
+			} catch (_e) {
+				misses++;
 			}
+			index++;
 		}
 
 		return availableSeasons;
 	} catch (error) {
 		console.error('Error detecting available seasons:', error);
-		// Fallback to just season1 if detection fails
-		return [{ id: 'season1', label: 'Season 1', number: 1 }];
+		return [];
 	}
 };
 
@@ -57,13 +56,37 @@ const loadCSV = async (filePath) => {
 	}
 };
 
+// Sanitize parsed CSV rows by filtering out empty rows and enforcing required fields
+const sanitizeRows = (rows, requiredKeys = []) => {
+	if (!Array.isArray(rows)) return [];
+	return rows.filter((row) => {
+		if (!row || typeof row !== 'object') return false;
+		// Drop rows with all values empty/whitespace/null
+		const hasAnyValue = Object.values(row).some((v) => v !== null && v !== undefined && String(v).trim() !== '');
+		if (!hasAnyValue) return false;
+		// Enforce required keys when provided
+		for (const key of requiredKeys) {
+			if (!(key in row)) return false;
+			const val = row[key];
+			if (val === null || val === undefined || String(val).trim() === '') return false;
+		}
+		return true;
+	});
+};
+
 // Load all datasets
 export const loadAllData = async (season = 'season1', league = 'suit-and-tie') => {
 	try {
-		const competitors = await loadCSV(`/data/${league}/${season}/competitors.csv`);
-		const rounds = await loadCSV(`/data/${league}/${season}/rounds.csv`);
-		const submissions = await loadCSV(`/data/${league}/${season}/submissions.csv`);
-		const votes = await loadCSV(`/data/${league}/${season}/votes.csv`);
+		const competitorsRaw = await loadCSV(`/data/${league}/${season}/competitors.csv`);
+		const roundsRaw = await loadCSV(`/data/${league}/${season}/rounds.csv`);
+		const submissionsRaw = await loadCSV(`/data/${league}/${season}/submissions.csv`);
+		const votesRaw = await loadCSV(`/data/${league}/${season}/votes.csv`);
+
+		// Sanitize all datasets to remove trailing/empty rows
+		const competitors = sanitizeRows(competitorsRaw, ['ID', 'Name']);
+		const rounds = sanitizeRows(roundsRaw, ['ID', 'Name']);
+		const submissions = sanitizeRows(submissionsRaw, ['Spotify URI', 'Submitter ID', 'Round ID']);
+		const votes = sanitizeRows(votesRaw, ['Voter ID', 'Round ID', 'Spotify URI']);
 
 		// Extract all Spotify URIs from submissions
 		const spotifyUris = submissions.map(submission => submission['Spotify URI']);

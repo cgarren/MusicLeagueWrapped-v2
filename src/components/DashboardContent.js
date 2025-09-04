@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useState } from 'react';
 import { Container, Typography, Grid, Box, Tabs, Tab, useMediaQuery, useTheme, Card, CardContent, Paper, Modal, IconButton } from '@mui/material';
 import { Close } from '@mui/icons-material';
 import { ScatterChart, Scatter, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, LineChart, Line } from 'recharts';
@@ -58,6 +58,8 @@ const DashboardContent = ({
 	// State for chart tabs
 	const [chartTabValue, setChartTabValue] = useState(0);
 
+
+
 	// Interaction state for performance charts
 
 	const handleRoundClick = (roundData, roundNumber) => {
@@ -107,7 +109,7 @@ const DashboardContent = ({
 
 		// Create chart data structure
 		const chartData = [];
-		const maxRounds = Math.max(...data.rounds.map((_, index) => index + 1));
+		const maxRounds = data.rounds.length;
 
 		// Track cumulative totals for each competitor
 		const cumulativeTotals = {};
@@ -501,13 +503,13 @@ const DashboardContent = ({
 							{/* Chart Tabs */}
 							<Box sx={{ borderBottom: 1, borderColor: 'divider', mb: 3 }}>
 								<Tabs value={chartTabValue} onChange={handleChartTabChange} aria-label="chart tabs">
-									<Tab label="Round-by-Round Votes" {...a11yProps(0)} />
-									<Tab label="Total Votes" {...a11yProps(1)} />
+									<Tab label="Total Votes" {...a11yProps(0)} />
+									<Tab label="Round-by-Round Votes" {...a11yProps(1)} />
 								</Tabs>
 							</Box>
 
 							{/* Chart Tab Panels */}
-							<TabPanel value={chartTabValue} index={0}>
+							<TabPanel value={chartTabValue} index={1}>
 								<Box sx={{
 									width: '100%',
 									height: { xs: 400, sm: 450, md: 500 },
@@ -596,7 +598,11 @@ const DashboardContent = ({
 																	color: theme.palette.primary.main,
 																	mb: 0.5
 																}}>
-																	{currentRound?.Name || `Round ${label}`}
+																	{(() => {
+																		const roundNumber = selectedRound.roundNumber;
+																		const currentRound = data.rounds?.[roundNumber - 1];
+																		return currentRound?.Name || `Round ${roundNumber}`;
+																	})()}
 																</Typography>
 																{winners.length > 0 && (
 																	<Typography variant="body2" sx={{
@@ -662,7 +668,7 @@ const DashboardContent = ({
 								</Box>
 							</TabPanel>
 
-							<TabPanel value={chartTabValue} index={1}>
+							<TabPanel value={chartTabValue} index={0}>
 								<Box sx={{
 									width: '100%',
 									height: { xs: 400, sm: 450, md: 500 },
@@ -746,7 +752,11 @@ const DashboardContent = ({
 																	color: theme.palette.primary.main,
 																	mb: 0.5
 																}}>
-																	{currentRound?.Name || `Round ${label}`}
+																	{(() => {
+																		const roundNumber = selectedRound.roundNumber;
+																		const currentRound = data.rounds?.[roundNumber - 1];
+																		return currentRound?.Name || `Round ${roundNumber}`;
+																	})()}
 																</Typography>
 																{leaders.length > 0 && (
 																	<Typography variant="body2" sx={{
@@ -816,7 +826,7 @@ const DashboardContent = ({
 								fontStyle: 'italic',
 								fontSize: { xs: '0.75rem', sm: '0.875rem' }
 							}}>
-								{chartTabValue === 0 ?
+								{chartTabValue === 1 ?
 									(isMediumScreen ?
 										'Tap anywhere on the chart to see detailed round results. Missing points indicate no submission in that round.' :
 										'Click anywhere on the chart to see detailed round results with song information. Missing points indicate a competitor did not submit in that round.'
