@@ -4,34 +4,33 @@ import { getTracksPopularity, extractTrackIdsFromUris } from './spotifyApi';
 // Function to get available seasons dynamically
 export const getAvailableSeasons = async (league = 'suit-and-tie') => {
 	try {
-		// Since we can't directly list directories in the browser, we'll try to fetch each season
-		// and see which ones exist. We'll try seasons 1-10 for now.
-		const maxSeasons = 10;
+		// Probe seasons progressively; stop after several consecutive misses.
 		const availableSeasons = [];
+		let index = 1;
+		let misses = 0;
+		const maxConsecutiveMisses = 3;
+		const hardStop = 100; // safety cap
 
-		for (let i = 1; i <= maxSeasons; i++) {
-			const seasonId = `season${i}`;
+		while (index <= hardStop && misses < maxConsecutiveMisses) {
+			const seasonId = `season${index}`;
 			try {
-				// Try to fetch the competitors.csv file for this season
-				const response = await fetch(`/data/${league}/${seasonId}/competitors.csv`);
-				if (response.ok) {
-					availableSeasons.push({
-						id: seasonId,
-						label: `Season ${i}`,
-						number: i
-					});
+				const res = await fetch(`/data/${league}/${seasonId}/competitors.csv`, { method: 'HEAD' });
+				if (res.ok) {
+					availableSeasons.push({ id: seasonId, label: `Season ${index}`, number: index });
+					misses = 0;
+				} else {
+					misses++;
 				}
-			} catch (error) {
-				// Season doesn't exist, continue to next
-				continue;
+			} catch (_e) {
+				misses++;
 			}
+			index++;
 		}
 
 		return availableSeasons;
 	} catch (error) {
 		console.error('Error detecting available seasons:', error);
-		// Fallback to just season1 if detection fails
-		return [{ id: 'season1', label: 'Season 1', number: 1 }];
+		return [];
 	}
 };
 

@@ -4,7 +4,7 @@ import { loadAllData, calculateAllSuperlatives, getAvailableSeasons } from '../u
 import DashboardContent from './DashboardContent';
 import SeasonSelector from './SeasonSelector';
 
-const Dashboard = ({ league = 'suit-and-tie' }) => {
+const Dashboard = ({ league = 'suit-and-tie', initialSeason = 'season1' }) => {
 	const [loading, setLoading] = useState(true);
 	const [error, setError] = useState(null);
 	const [superlatives, setSuperlatives] = useState(null);
@@ -21,9 +21,10 @@ const Dashboard = ({ league = 'suit-and-tie' }) => {
 				const seasons = await getAvailableSeasons(league);
 				setAvailableSeasons(seasons);
 
-				// Set default season to the first available season
+				// Set season from URL if valid, otherwise first available
 				if (seasons.length > 0) {
-					setSeason(seasons[0].id);
+					const hasInitial = seasons.some(s => s.id === initialSeason);
+					setSeason(hasInitial ? initialSeason : seasons[0].id);
 				}
 				setSeasonsLoaded(true);
 			} catch (err) {
@@ -36,7 +37,7 @@ const Dashboard = ({ league = 'suit-and-tie' }) => {
 		};
 
 		loadSeasons();
-	}, [league]);
+	}, [league, initialSeason]);
 
 	// Load data when season changes (but only after seasons are loaded)
 	useEffect(() => {
@@ -62,11 +63,36 @@ const Dashboard = ({ league = 'suit-and-tie' }) => {
 
 	const handleSeasonChange = (newSeason) => {
 		setSeason(newSeason);
+		// Update URL to reflect selected season on dedicated league pages
+		if (typeof window !== 'undefined' && league) {
+			const newPath = `/${league}/${newSeason}`;
+			window.history.pushState({}, '', newPath);
+		}
 	};
 
 	const handleTabChange = (event, newValue) => {
 		setTabValue(newValue);
 	};
+
+	// Sync season with browser navigation (back/forward)
+	useEffect(() => {
+		if (typeof window === 'undefined') return;
+
+		const onPopState = () => {
+			const path = window.location.pathname || '/';
+			const segments = path.split('/').filter(Boolean);
+			// Expecting /<league>/<seasonN>
+			const seasonSeg = segments[1];
+			if (seasonSeg && /^season\d+$/.test(seasonSeg)) {
+				if (seasonSeg !== season) {
+					setSeason(seasonSeg);
+				}
+			}
+		};
+
+		window.addEventListener('popstate', onPopState);
+		return () => window.removeEventListener('popstate', onPopState);
+	}, [season]);
 
 	if (!seasonsLoaded || loading) {
 		return (
