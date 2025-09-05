@@ -860,6 +860,186 @@ const DashboardContent = ({
 					</Card>
 				</Box>
 
+				{/* Submission Timing vs Performance Scatter Plot */}
+				<Box sx={{ mb: 6, width: '100%' }}>
+					<Card>
+						<CardContent>
+							<Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+								<Typography variant="h5" component="h2" gutterBottom sx={{ color: theme.palette.primary.main, fontWeight: 'bold', mb: 1 }}>
+									🕐 Submission Timing vs Performance
+								</Typography>
+							</Box>
+							<Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+								Does submitting early or late affect performance? Each point represents a song submission, showing when it was submitted (x-axis) and how well it performed (y-axis).
+							</Typography>
+							<Box sx={{ overflowX: 'auto', pb: 1 }}>
+								<Box sx={{ width: '100%', minWidth: { xs: 720, sm: '100%' }, height: { xs: 420, sm: 450, md: 500 }, minHeight: { xs: 360, sm: 400 } }}>
+									<ResponsiveContainer width="100%" height="100%">
+										<ScatterChart
+											margin={{
+												top: 20,
+												right: isMediumScreen ? 20 : 80,
+												bottom: isMediumScreen ? 40 : 60,
+												left: isMediumScreen ? 10 : 20,
+											}}
+										>
+											<CartesianGrid strokeDasharray="3 3" stroke={theme.palette.divider} opacity={isSmallScreen ? 0.2 : 0.3} />
+											<XAxis
+												type="number"
+												dataKey="x"
+												name="Submission Order"
+												domain={[0, 100]}
+												tick={{ fill: theme.palette.text.secondary, fontSize: isMediumScreen ? 10 : 12 }}
+												label={{
+													value: 'Submission Order (0% = First, 100% = Last)',
+													position: 'bottom',
+													offset: isMediumScreen ? -5 : -10,
+													style: { textAnchor: 'middle', fill: theme.palette.text.primary, fontSize: isMediumScreen ? '12px' : '14px', fontWeight: 'bold' }
+												}}
+											/>
+											<YAxis
+												type="number"
+												dataKey="y"
+												name="Performance"
+												domain={[0, 1]}
+												tick={{ fill: theme.palette.text.secondary, fontSize: isMediumScreen ? 10 : 12 }}
+												tickFormatter={(value) => `${(value * 100).toFixed(0)}%`}
+												label={{
+													value: 'Relative Performance (0-100%)',
+													angle: -90,
+													position: 'insideLeft',
+													style: { textAnchor: 'middle', fill: theme.palette.text.primary, fontSize: isMediumScreen ? '12px' : '14px', fontWeight: 'bold' }
+												}}
+											/>
+											<Tooltip content={({ active, payload }) => {
+												if (active && payload && payload.length) {
+													const data = payload[0].payload;
+													return (
+														<Paper sx={{
+															p: { xs: 1.5, sm: 2 },
+															backgroundColor: 'white',
+															border: `2px solid ${theme.palette.primary.main}`,
+															maxWidth: { xs: '250px', sm: '300px' },
+															fontSize: { xs: '0.875rem', sm: '1rem' }
+														}}>
+															<Typography variant="subtitle2" sx={{
+																fontWeight: 'bold',
+																color: theme.palette.primary.main,
+																fontSize: { xs: '0.875rem', sm: '1rem' }
+															}}>
+																{data.title}
+															</Typography>
+															<Typography variant="body2" color="text.secondary" sx={{
+																fontSize: { xs: '0.75rem', sm: '0.875rem' }
+															}}>
+																by {data.artist}
+															</Typography>
+															<Typography variant="body2" sx={{
+																mt: 1,
+																fontSize: { xs: '0.75rem', sm: '0.875rem' }
+															}}>
+																Round: {data.roundName}
+															</Typography>
+															<Typography variant="body2" sx={{
+																fontSize: { xs: '0.75rem', sm: '0.875rem' }
+															}}>
+																Submitted: {data.order} of {data.totalInRound}
+															</Typography>
+															<Typography variant="body2" sx={{
+																fontSize: { xs: '0.75rem', sm: '0.875rem' }
+															}}>
+																Votes: {data.votes}
+															</Typography>
+															<Typography variant="body2" sx={{
+																fontSize: { xs: '0.75rem', sm: '0.875rem' }
+															}}>
+																Performance: {(data.y * 100).toFixed(1)}%
+															</Typography>
+														</Paper>
+													);
+												}
+												return null;
+											}} />
+											<Scatter
+												data={(() => {
+													// Use the submission timing data from superlatives
+													if (!superlatives?.submissionTimingData) return [];
+													
+													return superlatives.submissionTimingData.map(item => ({
+														x: item.submissionPosition * 100, // Convert to percentage
+														y: item.normalizedPerformance,
+														title: item.title,
+														artist: item.artist,
+														roundName: item.roundName,
+														order: item.submissionOrder,
+														totalInRound: item.totalSubmissions,
+														votes: item.votes,
+														submitterId: item.submitterId
+													}));
+												})()}
+												fill={theme.palette.primary.main}
+											>
+												{(() => {
+													// Color by competitor
+													if (!superlatives?.submissionTimingData || !data?.competitors) return [];
+													const colors = ['#FF0000', '#00FF00', '#0000FF', '#FFFF00', '#FF00FF', '#00FFFF', '#800000', '#008000', '#000080', '#808000', '#800080', '#008080', '#FFA500', '#FFC0CB', '#A52A2A', '#808080', '#000000', '#DC143C', '#FFD700', '#4B0082', '#FF6347', '#32CD32', '#87CEEB', '#DDA0DD', '#F0E68C'];
+													
+													return superlatives.submissionTimingData.map((entry, index) => {
+														const competitorIndex = data.competitors.findIndex(comp => comp.ID === entry.submitterId);
+														const colorIndex = competitorIndex >= 0 ? competitorIndex % colors.length : 0;
+														return (
+															<Cell key={`cell-timing-${index}`} fill={colors[colorIndex]} fillOpacity={0.7} stroke={colors[colorIndex]} strokeWidth={isSmallScreen ? 1.2 : 1.8} r={isSmallScreen ? 4 : 5} />
+														);
+													});
+												})()}
+											</Scatter>
+											{/* Add trend line */}
+											{(() => {
+												if (!superlatives?.submissionTimingData || superlatives.submissionTimingData.length < 2) return null;
+												const data = superlatives.submissionTimingData.map(item => ({
+													x: item.submissionPosition * 100,
+													y: item.normalizedPerformance
+												}));
+												
+												// Calculate linear regression
+												const n = data.length;
+												let sumX = 0, sumY = 0, sumXY = 0, sumXX = 0;
+												data.forEach(p => {
+													sumX += p.x;
+													sumY += p.y;
+													sumXY += p.x * p.y;
+													sumXX += p.x * p.x;
+												});
+												
+												const denom = (n * sumXX - sumX * sumX);
+												if (!denom) return null;
+												
+												const slope = (n * sumXY - sumX * sumY) / denom;
+												const intercept = (sumY - slope * sumX) / n;
+												
+												const y0 = Math.max(0, Math.min(1, intercept));
+												const y100 = Math.max(0, Math.min(1, slope * 100 + intercept));
+												
+												return <ReferenceLine key="timing-trend" segment={[{ x: 0, y: y0 }, { x: 100, y: y100 }]} stroke={theme.palette.text.secondary} strokeDasharray="6 6" />;
+											})()}
+										</ScatterChart>
+									</ResponsiveContainer>
+								</Box>
+							</Box>
+							<Typography variant="body2" color="text.secondary" sx={{
+								mt: 2,
+								fontStyle: 'italic',
+								fontSize: { xs: '0.75rem', sm: '0.875rem' }
+							}}>
+								{isMediumScreen ?
+									'Each dot represents a song submission. Colors indicate different competitors.' :
+									'Each point represents a song submission. Position on x-axis shows submission order within the round (0% = first to submit, 100% = last to submit). Y-axis shows how well the song performed relative to others in that round.'
+								}
+							</Typography>
+						</CardContent>
+					</Card>
+				</Box>
+
 				<Typography variant="h4" component="h2" gutterBottom align="center" sx={{ mb: 4, mt: 2, fontSize: { xs: '1.5rem', sm: '2rem', md: '2.25rem' } }}>
 					League Superlatives
 				</Typography>
@@ -1233,6 +1413,33 @@ const DashboardContent = ({
 						justifyContent: { md: 'center' },
 						mb: 4
 					}}>
+						{/* Early Bird Performer */}
+						<Grid item xs={12} sm={6} md={4} lg={4} xl={3} sx={{
+							paddingBottom: 3,
+							display: 'flex',
+							justifyContent: 'center'
+						}}>
+							<Box sx={{ width: '100%', maxWidth: '500px' }}>
+								<SuperlativeCard
+									title="Early Bird Gets the Votes"
+									description="Submits early and performs well"
+									winnerName={superlatives?.earlyBirdLateBloomer?.competitor?.Name}
+									detail={`Early Bird Score: ${superlatives?.earlyBirdLateBloomer?.earlyBirdScore}
+								Average submission position: ${superlatives?.earlyBirdLateBloomer?.avgPosition}%
+								Average performance: ${superlatives?.earlyBirdLateBloomer?.avgPerformance}%`}
+									additionalCompetitors={superlatives?.earlyBirdLateBloomer?.restOfField}
+									isTied={superlatives?.earlyBirdLateBloomer?.isTied}
+									tiedWinners={superlatives?.earlyBirdLateBloomer?.tiedWinners}
+									tiedDetails={superlatives?.earlyBirdLateBloomer?.isTied ?
+										superlatives?.earlyBirdLateBloomer?.tiedWinners?.map(
+											name => `Early Bird Score: ${superlatives?.earlyBirdLateBloomer?.earlyBirdScore}`
+										) : null
+									}
+									calculationKey="earlyBirdLateBloomer"
+								/>
+							</Box>
+						</Grid>
+
 						{/* Early Voter */}
 						<Grid item xs={12} sm={6} md={4} lg={4} xl={3} sx={{
 							paddingBottom: 3,

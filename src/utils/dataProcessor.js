@@ -2068,6 +2068,154 @@ export const calculateSingleVoteGiver = (votes, competitors) => {
 	};
 };
 
+// Calculate submission timing vs performance data
+export const calculateSubmissionTimingData = (submissions, votes, rounds) => {
+	// Create a map of submission votes
+	const submissionVotes = {};
+	votes.forEach(vote => {
+		const uri = vote['Spotify URI'];
+		submissionVotes[uri] = (submissionVotes[uri] || 0) + parseInt(vote['Points Assigned'] || 0);
+	});
+
+	// Group submissions by round and calculate their order
+	const roundSubmissionData = {};
+	
+	// First pass: group by round
+	submissions.forEach(submission => {
+		const roundId = submission['Round ID'];
+		if (!roundSubmissionData[roundId]) {
+			roundSubmissionData[roundId] = [];
+		}
+		roundSubmissionData[roundId].push({
+			...submission,
+			timestamp: new Date(submission.Created),
+			votes: submissionVotes[submission['Spotify URI']] || 0
+		});
+	});
+
+	// Second pass: sort by timestamp and assign order
+	const processedData = [];
+	
+	Object.entries(roundSubmissionData).forEach(([roundId, submissions]) => {
+		// Sort submissions by timestamp
+		const sortedSubmissions = submissions.sort((a, b) => a.timestamp - b.timestamp);
+		
+		// Find the round details
+		const round = rounds.find(r => r.ID === roundId);
+		
+		// Calculate max votes for this round for normalization
+		const maxVotes = Math.max(...sortedSubmissions.map(s => s.votes));
+		const minVotes = Math.min(...sortedSubmissions.map(s => s.votes));
+		const voteRange = maxVotes - minVotes;
+		
+		// Assign order and calculate normalized performance
+		sortedSubmissions.forEach((submission, index) => {
+			const normalizedPerformance = voteRange > 0 ? 
+				(submission.votes - minVotes) / voteRange : 0.5;
+			
+			processedData.push({
+				roundId,
+				roundName: round?.Name || 'Unknown',
+				submissionOrder: index + 1,
+				totalSubmissions: sortedSubmissions.length,
+				submitterId: submission['Submitter ID'],
+				title: submission.Title,
+				artist: submission['Artist(s)'],
+				votes: submission.votes,
+				normalizedPerformance,
+				timestamp: submission.timestamp,
+				submissionPosition: (index + 1) / sortedSubmissions.length // Normalized position (0-1)
+			});
+		});
+	});
+	
+	return processedData;
+};
+
+// Calculate the Early Bird vs Late Bloomer superlative
+export const calculateEarlyBirdLateBloomer = (submissions, votes, competitors, rounds) => {
+	const timingData = calculateSubmissionTimingData(submissions, votes, rounds);
+	
+	// Group by competitor and calculate average submission position vs performance
+	const competitorStats = {};
+	
+	timingData.forEach(data => {
+		if (!competitorStats[data.submitterId]) {
+			competitorStats[data.submitterId] = {
+				positions: [],
+				performances: [],
+				roundCount: 0
+			};
+		}
+		competitorStats[data.submitterId].positions.push(data.submissionPosition);
+		competitorStats[data.submitterId].performances.push(data.normalizedPerformance);
+		competitorStats[data.submitterId].roundCount++;
+	});
+	
+	// Calculate metrics for each competitor
+	const competitorResults = [];
+	
+	Object.entries(competitorStats).forEach(([submitterId, stats]) => {
+		// Only consider competitors with at least 3 submissions
+		if (stats.roundCount < 3) return;
+		
+		const competitor = competitors.find(c => c.ID === submitterId);
+		if (!competitor) return;
+		
+		// Calculate average position and performance
+		const avgPosition = stats.positions.reduce((a, b) => a + b, 0) / stats.positions.length;
+		const avgPerformance = stats.performances.reduce((a, b) => a + b, 0) / stats.performances.length;
+		
+		// Calculate "early bird advantage" score: lower position (earlier) + higher performance = higher score
+		// Score formula: performance / position (higher is better for early birds who do well)
+		const earlyBirdScore = avgPerformance / avgPosition;
+		
+		competitorResults.push({
+			competitor,
+			avgPosition,
+			avgPerformance,
+			earlyBirdScore,
+			roundCount: stats.roundCount
+		});
+	});
+	
+	// Sort by early bird score (descending - best early performers first)
+	competitorResults.sort((a, b) => b.earlyBirdScore - a.earlyBirdScore);
+	
+	// Check for ties
+	const topScore = competitorResults[0]?.earlyBirdScore;
+	const tiedWinners = competitorResults.filter(item => 
+		Math.abs(item.earlyBirdScore - topScore) < 0.01
+	);
+	const isTied = tiedWinners.length > 1;
+	
+	const winner = competitorResults[0];
+	const tiedWinnersNames = isTied ? tiedWinners.map(item => item.competitor.Name) : null;
+	
+	// Rest of field
+	const restOfField = isTied
+		? competitorResults.filter(item => 
+			Math.abs(item.earlyBirdScore - topScore) >= 0.01
+		).map(item => ({
+			name: item.competitor.Name,
+			score: `Score: ${item.earlyBirdScore.toFixed(2)} (Avg pos: ${(item.avgPosition * 100).toFixed(0)}%, Avg perf: ${(item.avgPerformance * 100).toFixed(0)}%)`
+		}))
+		: competitorResults.slice(1).map(item => ({
+			name: item.competitor.Name,
+			score: `Score: ${item.earlyBirdScore.toFixed(2)} (Avg pos: ${(item.avgPosition * 100).toFixed(0)}%, Avg perf: ${(item.avgPerformance * 100).toFixed(0)}%)`
+		}));
+	
+	return {
+		competitor: winner?.competitor,
+		earlyBirdScore: winner?.earlyBirdScore?.toFixed(2),
+		avgPosition: winner ? (winner.avgPosition * 100).toFixed(0) : null,
+		avgPerformance: winner ? (winner.avgPerformance * 100).toFixed(0) : null,
+		restOfField,
+		isTied,
+		tiedWinners: tiedWinnersNames
+	};
+};
+
 // Calculate all superlatives at once
 export const calculateAllSuperlatives = (data) => {
 	const { competitors, rounds, submissions, votes } = data;
@@ -2090,6 +2238,8 @@ export const calculateAllSuperlatives = (data) => {
 	const maxVoteGiver = calculateMaxVoteGiver(votes, competitors, submissions);
 	const comebackKid = calculateComebackKid(votes, submissions, competitors, rounds);
 	const doesntVote = calculateDoesntVote(votes, competitors, rounds);
+	const earlyBirdLateBloomer = calculateEarlyBirdLateBloomer(submissions, votes, competitors, rounds);
+	const submissionTimingData = calculateSubmissionTimingData(submissions, votes, rounds);
 
 	return {
 		mostPopular,
@@ -2116,6 +2266,8 @@ export const calculateAllSuperlatives = (data) => {
 		singleVoteGiver,
 		maxVoteGiver,
 		comebackKid,
-		doesntVote
+		doesntVote,
+		earlyBirdLateBloomer,
+		submissionTimingData
 	};
 };
