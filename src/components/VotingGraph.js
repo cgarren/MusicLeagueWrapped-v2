@@ -1,8 +1,9 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Box, Typography, Card, CardContent, Tooltip, useMediaQuery, useTheme } from '@mui/material';
+import { Box, Typography, Card, CardContent, Tooltip, useMediaQuery, useTheme, Accordion, AccordionSummary, AccordionDetails, Button } from '@mui/material';
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 
 // Enhanced graph visualization to show voting relationships
-const VotingGraph = ({ competitors, votes, submissions }) => {
+const VotingGraph = ({ competitors, votes, submissions, fullScreen = false }) => {
 	const canvasRef = useRef(null);
 	const containerRef = useRef(null);
 	const [hoveredNode, setHoveredNode] = useState(null);
@@ -10,6 +11,7 @@ const VotingGraph = ({ competitors, votes, submissions }) => {
 	const [focusedCompetitorId, setFocusedCompetitorId] = useState(null);
 	const theme = useTheme();
 	const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
+	const [showMore, setShowMore] = useState(false);
 
 	// Calculate voting relationships
 	useEffect(() => {
@@ -547,13 +549,22 @@ const VotingGraph = ({ competitors, votes, submissions }) => {
 					Voting Network
 				</Typography>
 
-				<Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-					Visual representation of voting relationships between competitors. Thicker, darker lines indicate more votes exchanged, with arrows showing the direction of votes (who voted for whom). Each competitor has a unique arrow color. Click any competitor to focus on their voting patterns (click again or click empty space to clear focus). Hover over competitors to see detailed voting statistics.
+				<Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+					{isMobile
+						? (showMore
+							? 'Visual representation of voting relationships between competitors. Thicker, darker lines indicate more votes exchanged, with arrows showing the direction of votes (who voted for whom). Each competitor has a unique arrow color. Tap any competitor to focus on their voting patterns (tap again or tap empty space to clear focus).'
+							: 'Visual representation of voting relationships. Tap a competitor to focus; tap again to clear.')
+						: 'Visual representation of voting relationships between competitors. Thicker, darker lines indicate more votes exchanged, with arrows showing the direction of votes (who voted for whom). Each competitor has a unique arrow color. Click any competitor to focus on their voting patterns (click again or click empty space to clear focus).'}
 				</Typography>
+				{isMobile && (
+					<Button size="small" onClick={() => setShowMore(v => !v)} sx={{ mb: 2 }}>
+						{showMore ? 'Less' : 'More'}
+					</Button>
+				)}
 
 				<Box sx={{
 					width: '100%',
-					height: { xs: '350px', sm: '400px', md: '500px' },
+					height: fullScreen ? '100%' : { xs: '350px', sm: '400px', md: '500px' },
 					display: 'flex',
 					justifyContent: 'center',
 					alignItems: 'center',
@@ -603,9 +614,7 @@ const VotingGraph = ({ competitors, votes, submissions }) => {
 									{
 										name: 'preventOverflow',
 										enabled: true,
-										options: {
-											boundary: 'viewport',
-										},
+										options: { boundary: 'viewport' },
 									},
 								],
 							}}
@@ -617,110 +626,82 @@ const VotingGraph = ({ competitors, votes, submissions }) => {
 										boxShadow: 2,
 										border: '1px solid #ddd',
 										maxWidth: 300,
-										'& .MuiTooltip-arrow': {
-											color: 'white',
-										},
+										'& .MuiTooltip-arrow': { color: 'white' },
 									},
 								},
 							}}
 						>
-							<Box
-								sx={{
-									position: 'absolute',
-									left: tooltipPos.x,
-									top: tooltipPos.y,
-									width: 1,
-									height: 1,
-									pointerEvents: 'none',
-									transform: 'translate(-50%, -0%)',
-								}}
-							/>
+							<Box sx={{ position: 'absolute', left: tooltipPos.x, top: tooltipPos.y, width: 1, height: 1, pointerEvents: 'none', transform: 'translate(-50%, -0%)' }} />
 						</Tooltip>
 					)}
 				</Box>
 
 				{/* Competitor Color Legend */}
-				<Box sx={{ mt: 2, p: 2, bgcolor: 'grey.50', borderRadius: 1 }}>
-					<Typography variant="subtitle2" sx={{ fontWeight: 'bold', mb: 1 }}>
-						Competitor Arrow Colors:
-					</Typography>
-					<Box sx={{
-						display: 'flex',
-						flexWrap: 'wrap',
-						gap: 1.5,
-						justifyContent: 'center'
-					}}>
-						{(() => {
-							const colors = [
-								'#FF0000', '#00FF00', '#0000FF', '#FFFF00', '#FF00FF', '#00FFFF', '#800000', '#008000', '#000080', '#808000', '#800080', '#008080', '#FFA500', '#FFC0CB', '#A52A2A', '#808080', '#000000', '#DC143C', '#FFD700', '#4B0082', '#FF6347', '#32CD32', '#87CEEB', '#DDA0DD', '#F0E68C'
-							];
+				{isMobile ? (
+					<Accordion sx={{ mt: 2 }}>
+						<AccordionSummary expandIcon={<ExpandMoreIcon />}>
+							<Typography variant="subtitle2" sx={{ fontWeight: 'bold' }}>Competitor Arrow Colors</Typography>
+						</AccordionSummary>
+						<AccordionDetails>
+							<Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1.5, justifyContent: 'center' }}>
+								{(() => {
+									const colors = [
+										'#FF0000', '#00FF00', '#0000FF', '#FFFF00', '#FF00FF', '#00FFFF', '#800000', '#008000', '#000080', '#808000', '#800080', '#008080', '#FFA500', '#FFC0CB', '#A52A2A', '#808080', '#000000', '#DC143C', '#FFD700', '#4B0082', '#FF6347', '#32CD32', '#87CEEB', '#DDA0DD', '#F0E68C'
+									];
+									// Filter to only show competitors that appear in the graph
+									const activeCompetitorIds = new Set();
+									submissions.forEach(submission => { activeCompetitorIds.add(submission['Submitter ID']); });
+									votes.forEach(vote => { activeCompetitorIds.add(vote['Voter ID']); });
+									const activeCompetitors = competitors.filter(c => activeCompetitorIds.has(c.ID));
 
-							// Filter to only show competitors that appear in the graph
-							const activeCompetitorIds = new Set();
-							submissions.forEach(submission => {
-								activeCompetitorIds.add(submission['Submitter ID']);
-							});
-							votes.forEach(vote => {
-								activeCompetitorIds.add(vote['Voter ID']);
-							});
-							const activeCompetitors = competitors.filter(c => activeCompetitorIds.has(c.ID));
+									return activeCompetitors?.map((competitor, index) => {
+										if (!competitor || !competitor.Name) return null;
+										const colorIndex = index % colors.length;
+										return (
+											<Box key={competitor.ID || index} sx={{ display: 'flex', alignItems: 'center', gap: 0.5, minWidth: 'fit-content' }}>
+												<Box sx={{ display: 'flex', alignItems: 'center', flexShrink: 0 }}>
+													<Box sx={{ width: 16, height: 3, backgroundColor: colors[colorIndex], borderRadius: 1 }} />
+													<Box sx={{ width: 0, height: 0, borderLeft: '6px solid ' + colors[colorIndex], borderTop: '4px solid transparent', borderBottom: '4px solid transparent', ml: -0.5 }} />
+												</Box>
+												<Typography variant="caption" sx={{ fontSize: { xs: '0.7rem', sm: '0.75rem' }, whiteSpace: 'nowrap' }}>{competitor.Name}</Typography>
+											</Box>
+										);
+									}).filter(Boolean);
+								})()}
+							</Box>
+						</AccordionDetails>
+					</Accordion>
+				) : (
+					<Box sx={{ mt: 2, p: 2, bgcolor: 'grey.50', borderRadius: 1 }}>
+						<Typography variant="subtitle2" sx={{ fontWeight: 'bold', mb: 1 }}>
+							Competitor Arrow Colors:
+						</Typography>
+						<Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1.5, justifyContent: 'center' }}>
+							{(() => {
+								const colors = ['#FF0000', '#00FF00', '#0000FF', '#FFFF00', '#FF00FF', '#00FFFF', '#800000', '#008000', '#000080', '#808000', '#800080', '#008080', '#FFA500', '#FFC0CB', '#A52A2A', '#808080', '#000000', '#DC143C', '#FFD700', '#4B0082', '#FF6347', '#32CD32', '#87CEEB', '#DDA0DD', '#F0E68C'];
+								// Filter to only show competitors that appear in the graph
+								const activeCompetitorIds = new Set();
+								submissions.forEach(submission => { activeCompetitorIds.add(submission['Submitter ID']); });
+								votes.forEach(vote => { activeCompetitorIds.add(vote['Voter ID']); });
+								const activeCompetitors = competitors.filter(c => activeCompetitorIds.has(c.ID));
 
-							return activeCompetitors?.map((competitor, index) => {
-								if (!competitor || !competitor.Name) return null;
-								const colorIndex = index % colors.length;
-
-								return (
-									<Box
-										key={competitor.ID || index}
-										sx={{
-											display: 'flex',
-											alignItems: 'center',
-											gap: 0.5,
-											minWidth: 'fit-content'
-										}}
-									>
-										{/* Arrow indicator */}
-										<Box
-											sx={{
-												display: 'flex',
-												alignItems: 'center',
-												flexShrink: 0
-											}}
-										>
-											<Box
-												sx={{
-													width: 16,
-													height: 3,
-													backgroundColor: colors[colorIndex],
-													borderRadius: 1
-												}}
-											/>
-											<Box
-												sx={{
-													width: 0,
-													height: 0,
-													borderLeft: '6px solid ' + colors[colorIndex],
-													borderTop: '4px solid transparent',
-													borderBottom: '4px solid transparent',
-													ml: -0.5
-												}}
-											/>
+								return activeCompetitors?.map((competitor, index) => {
+									if (!competitor || !competitor.Name) return null;
+									const colorIndex = index % colors.length;
+									return (
+										<Box key={competitor.ID || index} sx={{ display: 'flex', alignItems: 'center', gap: 0.5, minWidth: 'fit-content' }}>
+											<Box sx={{ display: 'flex', alignItems: 'center', flexShrink: 0 }}>
+												<Box sx={{ width: 16, height: 3, backgroundColor: colors[colorIndex], borderRadius: 1 }} />
+												<Box sx={{ width: 0, height: 0, borderLeft: '6px solid ' + colors[colorIndex], borderTop: '4px solid transparent', borderBottom: '4px solid transparent', ml: -0.5 }} />
+											</Box>
+											<Typography variant="caption" sx={{ fontSize: { xs: '0.7rem', sm: '0.75rem' }, whiteSpace: 'nowrap' }}>{competitor.Name}</Typography>
 										</Box>
-										<Typography
-											variant="caption"
-											sx={{
-												fontSize: { xs: '0.7rem', sm: '0.75rem' },
-												whiteSpace: 'nowrap'
-											}}
-										>
-											{competitor.Name}
-										</Typography>
-									</Box>
-								);
-							}).filter(Boolean);
-						})()}
+									);
+								}).filter(Boolean);
+							})()}
+						</Box>
 					</Box>
-				</Box>
+				)}
 			</CardContent>
 		</Card>
 	);
