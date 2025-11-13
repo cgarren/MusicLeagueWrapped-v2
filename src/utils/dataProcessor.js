@@ -1,5 +1,6 @@
 import Papa from 'papaparse';
 import { getTracksPopularity, extractTrackIdsFromUris } from './spotifyApi';
+import { calculateSubmissionTimingImpact } from './submissionTiming';
 
 // Function to get available seasons dynamically
 export const getAvailableSeasons = async (league = 'suit-and-tie') => {
@@ -2090,6 +2091,12 @@ export const calculateAllSuperlatives = (data) => {
 	const maxVoteGiver = calculateMaxVoteGiver(votes, competitors, submissions);
 	const comebackKid = calculateComebackKid(votes, submissions, competitors, rounds);
 	const doesntVote = calculateDoesntVote(votes, competitors, rounds);
+	const submissionTiming = calculateSubmissionTimingImpact(
+		competitors,
+		rounds,
+		submissions,
+		votes
+	);
 
 	return {
 		mostPopular,
@@ -2116,6 +2123,7 @@ export const calculateAllSuperlatives = (data) => {
 		singleVoteGiver,
 		maxVoteGiver,
 		comebackKid,
-		doesntVote
+		doesntVote,
+		submissionTiming
 	};
 };

@@ -53,6 +53,81 @@ const DashboardContent = ({
 	const isSmallScreen = useMediaQuery(theme.breakpoints.down('sm'));
 	const isMediumScreen = useMediaQuery(theme.breakpoints.down('md'));
 
+	const formatNumber = (value, digits = 2) => {
+		if (value === null || value === undefined || Number.isNaN(value)) {
+			return 'N/A';
+		}
+		return Number(value).toFixed(digits);
+	};
+
+	const formatPValue = (value) => {
+		if (value === null || value === undefined || Number.isNaN(value)) {
+			return 'N/A';
+		}
+		if (value < 0.001) return '< 0.001';
+		return value.toFixed(3);
+	};
+
+	const submissionTiming = superlatives?.submissionTiming;
+	const hasTimingData = submissionTiming?.submissionRecords?.length >= 3;
+	const timingOverall = submissionTiming?.overall;
+	const timingTrendDescription = (() => {
+		if (!timingOverall) return null;
+		if (timingOverall.direction === 'earlier-better') {
+			return 'Earlier submissions tended to earn more votes.';
+		}
+		if (timingOverall.direction === 'later-better') {
+			return 'Later submissions tended to earn more votes.';
+		}
+		if (timingOverall.direction === 'neutral') {
+			return 'Submission timing did not show a strong league-wide trend.';
+		}
+		return 'Not enough data to evaluate submission timing.';
+	})();
+	const timingAdditionalCompetitors = (() => {
+		if (!submissionTiming?.rankedCompetitors?.length) return [];
+		return submissionTiming.rankedCompetitors
+			.slice(1, 4)
+			.filter((stat) => stat?.competitor?.Name)
+			.map((stat) => {
+				const early = formatNumber(stat.earlyAvgVotes, 1);
+				const late = formatNumber(stat.lateAvgVotes, 1);
+				return {
+					name: stat.competitor.Name,
+					score: `Early avg: ${early} vs Late avg: ${late} (corr ${formatNumber(stat.coefficient, 2)})`
+				};
+			});
+	})();
+	const timingWinnerDetail = (() => {
+		const stat = submissionTiming?.bestCompetitor;
+		if (!stat || !stat.competitor) {
+			return 'Not enough data to evaluate timing impact for individual competitors.';
+		}
+		const early = formatNumber(stat.earlyAvgVotes, 1);
+		const late = formatNumber(stat.lateAvgVotes, 1);
+		const corr = formatNumber(stat.coefficient, 2);
+		const pVal = formatPValue(stat.pValue);
+		const directionText =
+			stat.direction === 'earlier-better'
+				? 'Performed best when submitting earlier in the round.'
+				: stat.direction === 'later-better'
+					? 'Performed best when submitting later in the round.'
+					: 'Displayed a balanced timing pattern.';
+		return `Correlation (order vs votes): ${corr}
+p-value: ${pVal}
+Early avg votes: ${early}
+Late avg votes: ${late}
+${directionText}`;
+	})();
+	const timingSummaryStats = timingOverall
+		? {
+			coefficient: formatNumber(timingOverall.coefficient, 2),
+			pValue: formatPValue(timingOverall.pValue),
+			earlyAvg: formatNumber(timingOverall.earlyAvgVotes, 1),
+			lateAvg: formatNumber(timingOverall.lateAvgVotes, 1)
+		}
+		: null;
+
 	// State for round details modal
 	const [selectedRound, setSelectedRound] = useState(null);
 	const [modalOpen, setModalOpen] = useState(false);
@@ -860,6 +935,185 @@ const DashboardContent = ({
 					</Card>
 				</Box>
 
+				{hasTimingData && (
+					<Box sx={{ mb: 6, width: '100%' }}>
+						<Card>
+							<CardContent>
+								<Typography
+									variant="h5"
+									component="h2"
+									gutterBottom
+									sx={{ color: theme.palette.primary.main, fontWeight: 'bold', mb: 1 }}
+								>
+									⏱ Submission Timing vs Votes
+								</Typography>
+								{timingTrendDescription && (
+									<Typography variant="body2" sx={{ mb: 1 }}>
+										{timingTrendDescription}
+									</Typography>
+								)}
+								{timingSummaryStats && (
+									<Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+										Correlation: {timingSummaryStats.coefficient} (p {timingSummaryStats.pValue}) •
+										Early avg votes: {timingSummaryStats.earlyAvg} • Late avg votes: {timingSummaryStats.lateAvg}
+									</Typography>
+								)}
+								<Box sx={{ width: '100%', height: { xs: 420, sm: 460, md: 500 }, minHeight: { xs: 360, sm: 420 } }}>
+									<ResponsiveContainer width="100%" height="100%">
+										<ScatterChart
+											margin={{
+												top: 20,
+												right: isMediumScreen ? 20 : 80,
+												bottom: isMediumScreen ? 40 : 60,
+												left: isMediumScreen ? 10 : 20,
+											}}
+										>
+											<CartesianGrid strokeDasharray="3 3" stroke={theme.palette.divider} opacity={isSmallScreen ? 0.2 : 0.3} />
+											<XAxis
+												type="number"
+												dataKey="x"
+												name="Submission Order"
+												domain={[0, 1]}
+												tickFormatter={(value) => `${Math.round(value * 100)}%`}
+												tick={{ fill: theme.palette.text.secondary, fontSize: isMediumScreen ? 10 : 12 }}
+												label={{
+													value: 'Submission Order (0 = earliest, 1 = latest)',
+													position: 'bottom',
+													offset: isMediumScreen ? -5 : -10,
+													style: { textAnchor: 'middle', fill: theme.palette.text.primary, fontSize: isMediumScreen ? '12px' : '14px', fontWeight: 'bold' }
+												}}
+											/>
+											<YAxis
+												type="number"
+												dataKey="y"
+												name="Votes Received"
+												tick={{ fill: theme.palette.text.secondary, fontSize: isMediumScreen ? 10 : 12 }}
+												label={{
+													value: 'Votes Received',
+													angle: -90,
+													position: 'insideLeft',
+													style: { textAnchor: 'middle', fill: theme.palette.text.primary, fontSize: isMediumScreen ? '12px' : '14px', fontWeight: 'bold' }
+												}}
+											/>
+											<Tooltip content={({ active, payload }) => {
+												if (active && payload && payload.length) {
+													const dataPoint = payload[0].payload;
+													return (
+														<Paper sx={{
+															p: { xs: 1.5, sm: 2 },
+															backgroundColor: 'white',
+															border: `2px solid ${theme.palette.primary.main}`,
+															maxWidth: { xs: '260px', sm: '320px' },
+															fontSize: { xs: '0.875rem', sm: '1rem' }
+														}}>
+															<Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: theme.palette.primary.main }}>
+																{dataPoint.title || 'Submission'}
+															</Typography>
+															<Typography variant="body2" color="text.secondary">
+																Submitter: {dataPoint.submitterName}
+															</Typography>
+															<Typography variant="body2">
+																Round: {dataPoint.roundName || 'Unknown'}
+															</Typography>
+															<Typography variant="body2">
+																Order: {dataPoint.order} of {dataPoint.orderTotal}
+															</Typography>
+															<Typography variant="body2">
+																Votes: {dataPoint.votes}
+															</Typography>
+															<Typography variant="body2" sx={{ fontStyle: 'italic' }}>
+																Submitted: {new Date(dataPoint.createdUtc).toLocaleString()}
+															</Typography>
+														</Paper>
+													);
+												}
+												return null;
+											}} />
+											<Scatter
+												data={submissionTiming.submissionRecords.map((record) => ({
+													x: record.orderFraction,
+													y: record.votes,
+													submitterId: record.submitterId,
+													submitterName: record.submitterName,
+													roundName: record.roundName,
+													order: record.order,
+													orderTotal: record.orderTotal,
+													createdUtc: record.createdUtc,
+													title: record.title
+												}))}
+												fill={theme.palette.primary.main}
+											>
+												{submissionTiming.submissionRecords.map((record, index) => {
+													if (!data?.competitors?.length) return null;
+													const colors = [
+														'#FF0000', '#00FF00', '#0000FF', '#FFFF00', '#FF00FF', '#00FFFF', '#800000', '#008000', '#000080', '#808000',
+														'#800080', '#008080', '#FFA500', '#FFC0CB', '#A52A2A', '#808080', '#000000', '#DC143C', '#FFD700', '#4B0082',
+														'#FF6347', '#32CD32', '#87CEEB', '#DDA0DD', '#F0E68C'
+													];
+													const competitorIndex = data.competitors.findIndex((comp) => comp.ID === record.submitterId);
+													const colorIndex = competitorIndex >= 0 ? competitorIndex % colors.length : 0;
+													return (
+														<Cell
+															key={`submission-timing-${record.spotifyUri}-${index}`}
+															fill={colors[colorIndex]}
+															fillOpacity={0.75}
+															stroke={colors[colorIndex]}
+															strokeWidth={isSmallScreen ? 1 : 1.8}
+															r={isSmallScreen ? 4 : 5}
+														/>
+													);
+												})}
+											</Scatter>
+											{(() => {
+												if (!submissionTiming?.submissionRecords?.length) return null;
+												const points = submissionTiming.submissionRecords;
+												const n = points.length;
+												let sumX = 0;
+												let sumY = 0;
+												let sumXY = 0;
+												let sumXX = 0;
+												let minX = 1;
+												let maxX = 0;
+												points.forEach((point) => {
+													const xVal = point.orderFraction;
+													const yVal = point.votes;
+													sumX += xVal;
+													sumY += yVal;
+													sumXY += xVal * yVal;
+													sumXX += xVal * xVal;
+													minX = Math.min(minX, xVal);
+													maxX = Math.max(maxX, xVal);
+												});
+												const denominator = n * sumXX - sumX * sumX;
+												if (!denominator) return null;
+												const slope = (n * sumXY - sumX * sumY) / denominator;
+												const intercept = (sumY - slope * sumX) / n;
+												const yStart = slope * minX + intercept;
+												const yEnd = slope * maxX + intercept;
+												if (!Number.isFinite(yStart) || !Number.isFinite(yEnd)) return null;
+												return (
+													<ReferenceLine
+														key="timing-trend-line"
+														segment={[
+															{ x: minX, y: yStart },
+															{ x: maxX, y: yEnd }
+														]}
+														stroke={theme.palette.text.secondary}
+														strokeDasharray="6 6"
+													/>
+												);
+											})()}
+										</ScatterChart>
+									</ResponsiveContainer>
+								</Box>
+								<Typography variant="body2" color="text.secondary" sx={{ mt: 1.5, fontStyle: 'italic', fontSize: { xs: '0.75rem', sm: '0.875rem' } }}>
+									Points show each submission’s position in the round order (normalized). Hover or tap to see details.
+								</Typography>
+							</CardContent>
+						</Card>
+					</Box>
+				)}
+
 				<Typography variant="h4" component="h2" gutterBottom align="center" sx={{ mb: 4, mt: 2, fontSize: { xs: '1.5rem', sm: '2rem', md: '2.25rem' } }}>
 					League Superlatives
 				</Typography>
@@ -1233,6 +1487,27 @@ const DashboardContent = ({
 						justifyContent: { md: 'center' },
 						mb: 4
 					}}>
+					{hasTimingData && (
+						<Grid item xs={12} sm={6} md={4} lg={4} xl={3} sx={{
+							paddingBottom: 3,
+							display: 'flex',
+							justifyContent: 'center'
+						}}>
+							<Box sx={{ width: '100%', maxWidth: '500px' }}>
+								<SuperlativeCard
+									title="Timing Maestro"
+									description="Competitor whose submission timing most impacted their results"
+									winnerName={submissionTiming?.bestCompetitor?.competitor?.Name || 'No standout identified'}
+									detail={timingWinnerDetail}
+									additionalCompetitors={timingAdditionalCompetitors}
+									isTied={false}
+									tiedWinners={null}
+									calculationKey="submissionTimingImpact"
+								/>
+							</Box>
+						</Grid>
+					)}
+
 						{/* Early Voter */}
 						<Grid item xs={12} sm={6} md={4} lg={4} xl={3} sx={{
 							paddingBottom: 3,
@@ -1491,7 +1766,7 @@ const DashboardContent = ({
 
 			{/* Individual Performance Tab */}
 			<TabPanel value={tabValue} index={1}>
-				<IndividualPerformance data={data} season={season} />
+				<IndividualPerformance data={data} season={season} timingStats={submissionTiming} />
 			</TabPanel>
 
 			{/* Round Details Modal */}

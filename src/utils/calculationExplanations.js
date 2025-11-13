@@ -154,5 +154,13 @@ How it works:
 • Count how many rounds each competitor participated in vs. total rounds
 • Calculate the number and percentage of rounds missed
 • Only competitors who missed at least 1 round are considered
-• The competitor who missed the most rounds wins`
+ • The competitor who missed the most rounds wins`,
+
+	submissionTimingImpact: `This insight measures how the order a song was submitted within each round relates to the votes it received.
+
+How it works:
+• For every round we sort submissions by their timestamp to establish an earliest→latest order
+• Each submission is assigned a normalized order value (0 = first, 1 = last) and paired with the total votes it earned
+• A permutation test (thousands of random shuffles) estimates the two-tailed p-value for the league-wide correlation
+• The same approach is run for every competitor with 3+ submissions to see whose results are most affected by timing`
 };

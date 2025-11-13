@@ -1,14 +1,31 @@
 import React, { useState, useEffect } from 'react';
 import { Box, Typography, FormControl, InputLabel, Select, MenuItem, Paper, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Grid, Card, CardContent, useTheme, useMediaQuery } from '@mui/material';
-import { ScatterChart, Scatter, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
+import { ScatterChart, Scatter, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, ReferenceLine } from 'recharts';
 
-const IndividualPerformance = ({ data, season }) => {
+const IndividualPerformance = ({ data, season, timingStats }) => {
 	const [selectedIndividual, setSelectedIndividual] = useState('');
 	const [individualStats, setIndividualStats] = useState(null);
 	const [individualSubmissions, setIndividualSubmissions] = useState([]);
 	const [scatterData, setScatterData] = useState([]);
+	const [timingScatterData, setTimingScatterData] = useState([]);
+	const [individualTimingStats, setIndividualTimingStats] = useState(null);
 	const theme = useTheme();
 	const isMediumScreen = useMediaQuery(theme.breakpoints.down('md'));
+
+	const formatNumber = (value, digits = 2) => {
+		if (value === null || value === undefined || Number.isNaN(value)) {
+			return 'N/A';
+		}
+		return Number(value).toFixed(digits);
+	};
+
+	const formatPValue = (value) => {
+		if (value === null || value === undefined || Number.isNaN(value)) {
+			return 'N/A';
+		}
+		if (value < 0.001) return '< 0.001';
+		return value.toFixed(3);
+	};
 
 	useEffect(() => {
 		// Reset selection when season changes
@@ -16,15 +33,22 @@ const IndividualPerformance = ({ data, season }) => {
 		setIndividualStats(null);
 		setIndividualSubmissions([]);
 		setScatterData([]);
+		setTimingScatterData([]);
+		setIndividualTimingStats(null);
 	}, [season]);
 
 	useEffect(() => {
-		if (!selectedIndividual || !data) return;
+		if (!selectedIndividual || !data) {
+			setIndividualStats(null);
+			setIndividualSubmissions([]);
+			setScatterData([]);
+			setTimingScatterData([]);
+			setIndividualTimingStats(null);
+			return;
+		}
 
 		// Calculate all the statistics for the selected individual
 		const calculateIndividualStats = () => {
-			if (!data || !selectedIndividual) return;
-
 			const { competitors, submissions, votes, rounds } = data;
 
 			// Get individual info
@@ -84,6 +108,14 @@ const IndividualPerformance = ({ data, season }) => {
 				});
 
 			setScatterData(scatterPlotData);
+
+			const competitorTimingRecords = timingStats?.submissionRecords?.filter(
+				(record) => record.submitterId === selectedIndividual
+			) || [];
+			setTimingScatterData(competitorTimingRecords);
+			setIndividualTimingStats(
+				timingStats?.competitorStats?.[selectedIndividual] || null
+			);
 
 			// Calculate overall rank
 			const individualPointsMap = {};
@@ -361,7 +393,7 @@ const IndividualPerformance = ({ data, season }) => {
 		};
 
 		calculateIndividualStats();
-	}, [selectedIndividual, data]);
+	}, [selectedIndividual, data, timingStats]);
 
 	const handleIndividualChange = (event) => {
 		setSelectedIndividual(event.target.value);
@@ -597,7 +629,200 @@ const IndividualPerformance = ({ data, season }) => {
 								</CardContent>
 							</Card>
 						</Grid>
+						{individualTimingStats && (
+							<Grid item xs={12} sm={6} md={4} sx={{ display: 'flex', justifyContent: 'center' }}>
+								<Card sx={{ height: '100%', display: 'flex', flexDirection: 'column', width: '100%', maxWidth: { xs: 400, sm: 'none' } }}>
+									<CardContent sx={{ flexGrow: 1, display: 'flex', flexDirection: 'column', justifyContent: 'space-between', minHeight: 160 }}>
+										<Typography variant="h6" gutterBottom sx={{ fontWeight: 'bold', minHeight: { xs: '1.5rem', sm: '2rem' } }}>
+											Timing Effect
+										</Typography>
+										<Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 0.5, flexGrow: 1 }}>
+											<Typography variant="body1" color="primary" sx={{ fontWeight: 'bold', textAlign: 'center' }}>
+												Correlation: {formatNumber(individualTimingStats.coefficient, 2)} (p {formatPValue(individualTimingStats.pValue)})
+											</Typography>
+											<Typography variant="body2" color="text.secondary" sx={{ textAlign: 'center' }}>
+												Early avg votes: {formatNumber(individualTimingStats.earlyAvgVotes, 1)}
+											</Typography>
+											<Typography variant="body2" color="text.secondary" sx={{ textAlign: 'center' }}>
+												Late avg votes: {formatNumber(individualTimingStats.lateAvgVotes, 1)}
+											</Typography>
+											<Typography variant="body2" sx={{ textAlign: 'center', fontStyle: 'italic', color: 'text.secondary' }}>
+												{individualTimingStats.direction === 'earlier-better'
+													? 'Earlier submissions tended to do better.'
+													: individualTimingStats.direction === 'later-better'
+														? 'Later submissions tended to do better.'
+														: 'No strong timing trend detected.'}
+											</Typography>
+										</Box>
+									</CardContent>
+								</Card>
+							</Grid>
+						)}
 					</Grid>
+
+					{individualTimingStats && timingScatterData.length > 0 && (
+						<Card sx={{ mt: 4 }}>
+							<CardContent>
+								<Typography variant="h6" gutterBottom sx={{ color: theme.palette.primary.main, fontWeight: 'bold' }}>
+									⏱ Submission Timing vs Votes
+								</Typography>
+								<Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+									How your submission order within each round related to the votes you earned.
+								</Typography>
+								<Box sx={{ width: '100%', height: { xs: 400, sm: 450, md: 500 }, minHeight: { xs: 350, sm: 400 } }}>
+									<ResponsiveContainer width="100%" height="100%">
+										<ScatterChart
+											margin={{
+												top: 20,
+												right: isMediumScreen ? 20 : 80,
+												bottom: isMediumScreen ? 40 : 60,
+												left: isMediumScreen ? 10 : 20,
+											}}
+										>
+											<CartesianGrid strokeDasharray="3 3" stroke={theme.palette.divider} opacity={0.3} />
+											<XAxis
+												type="number"
+												dataKey="x"
+												name="Submission Order"
+												domain={[0, 1]}
+												tickFormatter={(value) => `${Math.round(value * 100)}%`}
+												tick={{ fill: theme.palette.text.secondary, fontSize: isMediumScreen ? 10 : 12 }}
+												label={{
+													value: 'Submission Order (0 = earliest, 1 = latest)',
+													position: 'bottom',
+													offset: isMediumScreen ? -5 : -10,
+													style: {
+														textAnchor: 'middle',
+														fill: theme.palette.text.primary,
+														fontSize: isMediumScreen ? '12px' : '14px',
+														fontWeight: 'bold'
+													}
+												}}
+											/>
+											<YAxis
+												type="number"
+												dataKey="y"
+												name="Votes Received"
+												tick={{ fill: theme.palette.text.secondary, fontSize: isMediumScreen ? 10 : 12 }}
+												label={{
+													value: 'Votes Received',
+													angle: -90,
+													position: 'insideLeft',
+													style: {
+														textAnchor: 'middle',
+														fill: theme.palette.text.primary,
+														fontSize: isMediumScreen ? '12px' : '14px',
+														fontWeight: 'bold'
+													}
+												}}
+											/>
+											<Tooltip content={({ active, payload }) => {
+												if (active && payload && payload.length) {
+													const dataPoint = payload[0].payload;
+													return (
+														<Paper sx={{
+															p: { xs: 1.5, sm: 2 },
+															backgroundColor: 'white',
+															border: `2px solid ${theme.palette.primary.main}`,
+															maxWidth: { xs: '260px', sm: '320px' },
+															fontSize: { xs: '0.875rem', sm: '1rem' }
+														}}>
+															<Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: theme.palette.primary.main }}>
+																{dataPoint.title || 'Submission'}
+															</Typography>
+															<Typography variant="body2" color="text.secondary">
+																Round: {dataPoint.roundName || 'Unknown'}
+															</Typography>
+															<Typography variant="body2">
+																Order: {dataPoint.order} of {dataPoint.orderTotal}
+															</Typography>
+															<Typography variant="body2">
+																Votes: {dataPoint.votes}
+															</Typography>
+															<Typography variant="body2" sx={{ fontStyle: 'italic' }}>
+																Submitted: {new Date(dataPoint.createdUtc).toLocaleString()}
+															</Typography>
+														</Paper>
+													);
+												}
+												return null;
+											}} />
+											<Scatter
+												data={timingScatterData.map((record) => ({
+													x: record.orderFraction,
+													y: record.votes,
+													roundName: record.roundName,
+													order: record.order,
+													orderTotal: record.orderTotal,
+													createdUtc: record.createdUtc,
+													title: record.title
+												}))}
+												fill={theme.palette.primary.main}
+											>
+												{timingScatterData.map((record, index) => (
+													<Cell
+														key={`timing-${record.spotifyUri}-${index}`}
+														fill={theme.palette.primary.main}
+														fillOpacity={0.8}
+														stroke={theme.palette.primary.dark}
+														strokeWidth={2}
+														r={isMediumScreen ? 8 : 6}
+													/>
+												))}
+											</Scatter>
+											{(() => {
+												if (!timingScatterData.length) return null;
+												const points = timingScatterData;
+												const n = points.length;
+												let sumX = 0;
+												let sumY = 0;
+												let sumXY = 0;
+												let sumXX = 0;
+												let minX = 1;
+												let maxX = 0;
+												points.forEach((point) => {
+													const xVal = point.orderFraction;
+													const yVal = point.votes;
+													sumX += xVal;
+													sumY += yVal;
+													sumXY += xVal * yVal;
+													sumXX += xVal * xVal;
+													minX = Math.min(minX, xVal);
+													maxX = Math.max(maxX, xVal);
+												});
+												const denominator = n * sumXX - sumX * sumX;
+												if (!denominator) return null;
+												const slope = (n * sumXY - sumX * sumY) / denominator;
+												const intercept = (sumY - slope * sumX) / n;
+												const yStart = slope * minX + intercept;
+												const yEnd = slope * maxX + intercept;
+												if (!Number.isFinite(yStart) || !Number.isFinite(yEnd)) return null;
+												return (
+													<ReferenceLine
+														key="individual-timing-trend"
+														segment={[
+															{ x: minX, y: yStart },
+															{ x: maxX, y: yEnd }
+														]}
+														stroke={theme.palette.text.secondary}
+														strokeDasharray="6 6"
+													/>
+												);
+											})()}
+										</ScatterChart>
+									</ResponsiveContainer>
+								</Box>
+								<Typography variant="body2" color="text.secondary" sx={{
+									mt: 1.5,
+									fontStyle: 'italic',
+									fontSize: { xs: '0.75rem', sm: '0.875rem' }
+								}}>
+									Correlation: {formatNumber(individualTimingStats.coefficient, 2)} (p {formatPValue(individualTimingStats.pValue)}).
+									Early avg votes: {formatNumber(individualTimingStats.earlyAvgVotes, 1)} vs Late avg votes: {formatNumber(individualTimingStats.lateAvgVotes, 1)}.
+								</Typography>
+							</CardContent>
+						</Card>
+					)}
 
 					<Typography variant="h5" component="h3" gutterBottom sx={{ mt: 5, mb: 2 }}>
 						Submitted Songs
