@@ -1,14 +1,87 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Box, Typography, FormControl, InputLabel, Select, MenuItem, Paper, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Grid, Card, CardContent, useTheme, useMediaQuery } from '@mui/material';
-import { ScatterChart, Scatter, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
+import { ScatterChart, Scatter, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, ReferenceLine } from 'recharts';
 
-const IndividualPerformance = ({ data, season }) => {
+const IndividualPerformance = ({ data, season, submissionTiming }) => {
 	const [selectedIndividual, setSelectedIndividual] = useState('');
 	const [individualStats, setIndividualStats] = useState(null);
 	const [individualSubmissions, setIndividualSubmissions] = useState([]);
 	const [scatterData, setScatterData] = useState([]);
 	const theme = useTheme();
 	const isMediumScreen = useMediaQuery(theme.breakpoints.down('md'));
+
+	const competitorTiming = submissionTiming?.perCompetitor?.[selectedIndividual];
+
+	const personalTimingChartData = useMemo(() => {
+		if (!competitorTiming?.entries) return [];
+		return competitorTiming.entries
+			.slice()
+			.sort((a, b) => a.submissionOrder - b.submissionOrder)
+			.map((entry, index) => ({
+				orderPercent: Math.round(entry.orderPercentile * 100),
+				order: entry.submissionOrder,
+				votes: entry.votes,
+				roundName: entry.roundName,
+				title: entry.title,
+				createdAt: entry.createdAt,
+				timeFromFirstHours: entry.timeFromFirstHours,
+				isEarly: entry.orderPercentile <= 0.5,
+				performance: entry.performanceRank * 100 || 0,
+				key: `${entry.roundId || index}-${entry.uri || index}`
+			}));
+	}, [competitorTiming]);
+
+	const personalTimingSummary = useMemo(() => {
+		if (!competitorTiming) {
+			return 'Not enough submissions to evaluate timing impact.';
+		}
+		if (competitorTiming.sampleSize < 3 || typeof competitorTiming.correlation !== 'number') {
+			return 'Need more submissions to assess how timing affects your results.';
+		}
+		if (competitorTiming.isSignificant) {
+			if (competitorTiming.correlation > 0) {
+				return 'Submitting earlier tended to earn you more votes.';
+			}
+			if (competitorTiming.correlation < 0) {
+				return 'Submitting later tended to earn you more votes.';
+			}
+			return 'Submission timing showed a statistically significant relationship with your results.';
+		}
+		return 'No strong relationship between when you submit and the votes you receive.';
+	}, [competitorTiming]);
+
+	const personalTimingStats = useMemo(() => {
+		if (!competitorTiming) return null;
+		const averageOrderPercent = typeof competitorTiming.averageOrderPercentile === 'number'
+			? (competitorTiming.averageOrderPercentile * 100).toFixed(1)
+			: null;
+		const correlationDisplay = typeof competitorTiming.correlation === 'number'
+			? competitorTiming.correlation.toFixed(2)
+			: 'N/A';
+		const pValueDisplay = typeof competitorTiming.pValue === 'number'
+			? (competitorTiming.pValue < 0.001 ? '<0.001' : competitorTiming.pValue.toFixed(3))
+			: 'N/A';
+		const earlyVotes = typeof competitorTiming.earlyAvgVotes === 'number'
+			? competitorTiming.earlyAvgVotes.toFixed(2)
+			: null;
+		const lateVotes = typeof competitorTiming.lateAvgVotes === 'number'
+			? competitorTiming.lateAvgVotes.toFixed(2)
+			: null;
+		const voteDelta = typeof competitorTiming.voteDelta === 'number'
+			? `${competitorTiming.voteDelta >= 0 ? '+' : ''}${competitorTiming.voteDelta.toFixed(2)} votes`
+			: null;
+		return {
+			averageOrderPercent,
+			correlationDisplay,
+			pValueDisplay,
+			earlyVotes,
+			lateVotes,
+			voteDelta,
+			sampleSize: competitorTiming.sampleSize ?? 0,
+			earlyCount: competitorTiming.earlyCount ?? 0,
+			lateCount: competitorTiming.lateCount ?? 0
+		};
+	}, [competitorTiming]);
 
 	useEffect(() => {
 		// Reset selection when season changes
@@ -597,6 +670,36 @@ const IndividualPerformance = ({ data, season }) => {
 								</CardContent>
 							</Card>
 						</Grid>
+
+						{personalTimingStats && competitorTiming?.sampleSize >= 2 && (
+							<Grid item xs={12} sm={6} md={4} sx={{ display: 'flex', justifyContent: 'center' }}>
+								<Card sx={{ height: '100%', display: 'flex', flexDirection: 'column', width: '100%', maxWidth: { xs: 400, sm: 'none' } }}>
+									<CardContent sx={{ flexGrow: 1, display: 'flex', flexDirection: 'column', justifyContent: 'space-between', minHeight: 160 }}>
+										<Typography variant="h6" gutterBottom sx={{ fontWeight: 'bold', minHeight: { xs: '1.5rem', sm: '2rem' } }}>
+											Submission Timing Impact
+										</Typography>
+										<Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.75, flexGrow: 1, justifyContent: 'center' }}>
+											{personalTimingStats.averageOrderPercent && (
+												<Typography variant="body2" color="text.secondary">
+													Avg submission order: {personalTimingStats.averageOrderPercent} percentile
+												</Typography>
+											)}
+											{personalTimingStats.voteDelta && personalTimingStats.earlyVotes && personalTimingStats.lateVotes && (
+												<Typography variant="body2" color="text.secondary">
+													Early vs late votes: {personalTimingStats.earlyVotes} vs {personalTimingStats.lateVotes} ({personalTimingStats.voteDelta})
+												</Typography>
+											)}
+											<Typography variant="body2" color="text.secondary">
+												Correlation ρ={personalTimingStats.correlationDisplay}, p={personalTimingStats.pValueDisplay}
+											</Typography>
+											<Typography variant="caption" color="text.secondary">
+												Sample: {personalTimingStats.sampleSize} songs ({personalTimingStats.earlyCount} early / {personalTimingStats.lateCount} late)
+											</Typography>
+										</Box>
+									</CardContent>
+								</Card>
+							</Grid>
+						)}
 					</Grid>
 
 					<Typography variant="h5" component="h3" gutterBottom sx={{ mt: 5, mb: 2 }}>
@@ -636,6 +739,121 @@ const IndividualPerformance = ({ data, season }) => {
 							</TableBody>
 						</Table>
 					</TableContainer>
+
+					{personalTimingChartData.length > 0 && (
+						<Card sx={{ mt: 4 }}>
+							<CardContent>
+								<Typography variant="h6" gutterBottom sx={{ color: theme.palette.primary.main, fontWeight: 'bold' }}>
+									⏱️ Your Submission Timing vs Votes
+								</Typography>
+								<Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+									{personalTimingSummary}
+								</Typography>
+								<Box sx={{
+									width: '100%',
+									height: { xs: 360, sm: 420, md: 460 },
+									minHeight: { xs: 300, sm: 360 }
+								}}>
+									<ResponsiveContainer width="100%" height="100%">
+										<ScatterChart
+											margin={{
+												top: 20,
+												right: isMediumScreen ? 20 : 60,
+												bottom: isMediumScreen ? 40 : 60,
+												left: isMediumScreen ? 10 : 20,
+											}}
+										>
+											<CartesianGrid strokeDasharray="3 3" stroke={theme.palette.divider} opacity={0.3} />
+											<XAxis
+												type="number"
+												dataKey="orderPercent"
+												name="Submission timing"
+												domain={[0, 100]}
+												tick={{ fill: theme.palette.text.secondary, fontSize: isMediumScreen ? 10 : 12 }}
+												label={{
+													value: 'Submission order (earliest → latest)',
+													position: 'bottom',
+													offset: isMediumScreen ? -5 : -10,
+													style: {
+														textAnchor: 'middle',
+														fill: theme.palette.text.primary,
+														fontSize: isMediumScreen ? '12px' : '14px',
+														fontWeight: 'bold'
+													}
+												}}
+											/>
+											<YAxis
+												type="number"
+												dataKey="votes"
+												name="Votes"
+												tick={{ fill: theme.palette.text.secondary, fontSize: isMediumScreen ? 10 : 12 }}
+												label={{
+													value: 'Votes received',
+													angle: -90,
+													position: 'insideLeft',
+													style: {
+														textAnchor: 'middle',
+														fill: theme.palette.text.primary,
+														fontSize: isMediumScreen ? '12px' : '14px',
+														fontWeight: 'bold'
+													}
+												}}
+											/>
+											<Tooltip content={({ active, payload }) => {
+												if (active && payload && payload.length) {
+													const datum = payload[0].payload;
+													return (
+														<Paper sx={{
+															p: { xs: 1.5, sm: 2 },
+															backgroundColor: 'white',
+															border: `2px solid ${theme.palette.primary.main}`
+														}}>
+															<Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: theme.palette.primary.main }}>
+																{datum.title}
+															</Typography>
+															<Typography variant="body2" color="text.secondary">
+																Round: {datum.roundName || 'Unknown'}
+															</Typography>
+															<Typography variant="body2">
+																Votes: {datum.votes}
+															</Typography>
+															<Typography variant="body2">
+																Order percentile: {datum.orderPercent}%
+															</Typography>
+															{typeof datum.timeFromFirstHours === 'number' && (
+																<Typography variant="body2">
+																	{datum.timeFromFirstHours.toFixed(1)} hrs after first submission
+																</Typography>
+															)}
+														</Paper>
+													);
+												}
+												return null;
+											}} />
+											<ReferenceLine x={50} stroke={theme.palette.text.secondary} strokeDasharray="6 6" />
+											<Scatter data={personalTimingChartData}>
+												{personalTimingChartData.map((entry, index) => (
+													<Cell
+														key={entry.key || `timing-${index}`}
+														fill={entry.isEarly ? theme.palette.primary.main : theme.palette.secondary.main}
+														fillOpacity={0.85}
+														stroke={entry.isEarly ? theme.palette.primary.dark : theme.palette.secondary.dark}
+														strokeWidth={2}
+														r={isMediumScreen ? 7 : 6}
+													/>
+												))}
+											</Scatter>
+										</ScatterChart>
+									</ResponsiveContainer>
+								</Box>
+								{personalTimingStats && (
+									<Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1.5 }}>
+										Points left of the dotted line were submitted earlier than half of the round.
+									</Typography>
+								)}
+							</CardContent>
+						</Card>
+					)}
 
 					{/* Performance vs Popularity Scatter Plot */}
 					{scatterData.length > 0 && (

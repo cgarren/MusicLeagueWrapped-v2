@@ -74,6 +74,108 @@ const sanitizeRows = (rows, requiredKeys = []) => {
 	});
 };
 
+const safeParseDate = (value) => {
+	if (!value) return null;
+	const date = new Date(value);
+	return Number.isNaN(date.getTime()) ? null : date;
+};
+
+const mean = (values) => {
+	if (!Array.isArray(values) || values.length === 0) return null;
+	const total = values.reduce((sum, val) => sum + val, 0);
+	return total / values.length;
+};
+
+const standardDeviation = (values) => {
+	if (!Array.isArray(values) || values.length < 2) return 0;
+	const avg = mean(values);
+	const variance = values.reduce((sum, val) => sum + Math.pow(val - avg, 2), 0) / (values.length - 1);
+	return Math.sqrt(variance);
+};
+
+const rankArray = (values, { descending = false } = {}) => {
+	if (!Array.isArray(values)) return [];
+	const sorted = values
+		.map((value, index) => ({ value, index }))
+		.sort((a, b) => {
+			if (a.value === b.value) return a.index - b.index;
+			return descending ? b.value - a.value : a.value - b.value;
+		});
+
+	const ranks = new Array(values.length);
+	let i = 0;
+	while (i < sorted.length) {
+		let j = i;
+		while (j + 1 < sorted.length && sorted[j + 1].value === sorted[i].value) {
+			j++;
+		}
+		const rankValue = (i + j + 2) / 2; // average rank (1-based)
+		for (let k = i; k <= j; k++) {
+			ranks[sorted[k].index] = rankValue;
+		}
+		i = j + 1;
+	}
+	return ranks;
+};
+
+const pearsonCorrelation = (x, y) => {
+	if (!Array.isArray(x) || !Array.isArray(y) || x.length !== y.length || x.length < 2) return null;
+	const meanX = mean(x);
+	const meanY = mean(y);
+	let sumXX = 0;
+	let sumYY = 0;
+	let sumXY = 0;
+
+	for (let i = 0; i < x.length; i++) {
+		const dx = x[i] - meanX;
+		const dy = y[i] - meanY;
+		sumXX += dx * dx;
+		sumYY += dy * dy;
+		sumXY += dx * dy;
+	}
+
+	const denominator = Math.sqrt(sumXX * sumYY);
+	if (!denominator) return null;
+	return sumXY / denominator;
+};
+
+const spearmanCorrelation = (x, y) => {
+	if (!Array.isArray(x) || !Array.isArray(y) || x.length !== y.length || x.length < 3) return null;
+	const rankX = rankArray(x);
+	const rankY = rankArray(y);
+	return pearsonCorrelation(rankX, rankY);
+};
+
+const erf = (x) => {
+	// Abramowitz and Stegun formula 7.1.26
+	const sign = x < 0 ? -1 : 1;
+	const absX = Math.abs(x);
+
+	const a1 = 0.254829592;
+	const a2 = -0.284496736;
+	const a3 = 1.421413741;
+	const a4 = -1.453152027;
+	const a5 = 1.061405429;
+	const p = 0.3275911;
+
+	const t = 1 / (1 + p * absX);
+	const y = 1 - ((((a5 * t + a4) * t + a3) * t + a2) * t + a1) * t * Math.exp(-absX * absX);
+	return sign * y;
+};
+
+const normalCdf = (z) => 0.5 * (1 + erf(z / Math.SQRT2));
+
+const correlationPValue = (r, n) => {
+	if (r === null || Number.isNaN(r) || !Number.isFinite(r) || !Number.isFinite(n) || n < 4) return null;
+	const clampedR = Math.min(0.999999, Math.max(-0.999999, r));
+	const fisherZ = 0.5 * Math.log((1 + clampedR) / (1 - clampedR));
+	if (!Number.isFinite(fisherZ)) return null;
+	const z = Math.abs(fisherZ) * Math.sqrt(Math.max(n - 3, 0));
+	if (!Number.isFinite(z)) return null;
+	const p = 2 * (1 - normalCdf(z));
+	return Math.max(0, Math.min(1, p));
+};
+
 // Load all datasets
 export const loadAllData = async (season = 'season1', league = 'suit-and-tie') => {
 	try {
@@ -2068,6 +2170,333 @@ export const calculateSingleVoteGiver = (votes, competitors) => {
 	};
 };
 
+const calculateSubmissionTimingImpact = (submissions, votes, rounds, competitors) => {
+	const buildEmptyResult = () => ({
+		enrichedSubmissions: [],
+		summary: {
+			sampleSize: 0,
+			spearmanCoefficient: null,
+			pValue: null,
+			isSignificant: false,
+			direction: 'neutral',
+			averageVotes: null,
+			earlyVsLate: {
+				early: { count: 0, averageVotes: null, averagePerformance: null },
+				late: { count: 0, averageVotes: null, averagePerformance: null },
+				deltaVotes: null,
+				deltaPerformance: null
+			},
+			bucketAverages: [],
+			perRound: []
+		},
+		perCompetitor: {},
+		topEarly: null,
+		topLate: null
+	});
+
+	if (
+		!Array.isArray(submissions) ||
+		submissions.length === 0 ||
+		!Array.isArray(votes) ||
+		votes.length === 0
+	) {
+		return buildEmptyResult();
+	}
+
+	const votesBySubmission = {};
+	votes.forEach(vote => {
+		const uri = vote?.['Spotify URI'];
+		if (!uri) return;
+		const points = parseInt(vote['Points Assigned'] || 0, 10);
+		if (!Number.isFinite(points)) return;
+		votesBySubmission[uri] = (votesBySubmission[uri] || 0) + points;
+	});
+
+	const competitorLookup = {};
+	(competitors || []).forEach(competitor => {
+		if (competitor?.ID) {
+			competitorLookup[competitor.ID] = competitor;
+		}
+	});
+
+	const roundLookup = {};
+	(rounds || []).forEach((round, index) => {
+		if (round?.ID) {
+			roundLookup[round.ID] = {
+				name: round?.Name || `Round ${index + 1}`,
+				order: index
+			};
+		}
+	});
+
+	const submissionsByRound = {};
+	submissions.forEach(submission => {
+		const roundId = submission?.['Round ID'];
+		const createdAt = safeParseDate(submission?.Created);
+		const uri = submission?.['Spotify URI'];
+		if (!roundId || !uri || !createdAt || !roundLookup[roundId]) return;
+
+		if (!submissionsByRound[roundId]) submissionsByRound[roundId] = [];
+
+		submissionsByRound[roundId].push({
+			uri,
+			title: submission?.Title || 'Unknown Track',
+			createdAt,
+			createdAtMs: createdAt.getTime(),
+			votes: votesBySubmission[uri] || 0,
+			submitterId: submission?.['Submitter ID'],
+			submitterName: competitorLookup[submission?.['Submitter ID']]?.Name || 'Unknown',
+			roundId,
+			roundName: roundLookup[roundId].name,
+			roundOrder: roundLookup[roundId].order + 1
+		});
+	});
+
+	const enrichedSubmissions = [];
+	const perRoundSummaries = [];
+
+	Object.entries(submissionsByRound).forEach(([roundId, roundSubmissions]) => {
+		if (!Array.isArray(roundSubmissions) || roundSubmissions.length === 0) return;
+
+		roundSubmissions.sort((a, b) => {
+			if (a.createdAtMs === b.createdAtMs) {
+				return a.uri.localeCompare(b.uri);
+			}
+			return a.createdAtMs - b.createdAtMs;
+		});
+
+		const voteValues = roundSubmissions.map(item => item.votes);
+		const minVotes = Math.min(...voteValues);
+		const maxVotes = Math.max(...voteValues);
+		const voteRange = maxVotes - minVotes;
+		const meanVotes = mean(voteValues) ?? 0;
+		const stdVotes = standardDeviation(voteValues);
+		const performanceRanks = rankArray(voteValues, { descending: true });
+
+		const firstCreated = roundSubmissions[0].createdAtMs;
+		const lastCreated = roundSubmissions[roundSubmissions.length - 1].createdAtMs;
+		const spanMs = Math.max(lastCreated - firstCreated, 0);
+		const spanHours = spanMs / (1000 * 60 * 60);
+
+		roundSubmissions.forEach((submission, index) => {
+			const submissionCount = roundSubmissions.length;
+			const order = index + 1;
+			const orderPercentile = submissionCount > 1 ? index / (submissionCount - 1) : 0.5;
+			const earliness = 1 - orderPercentile;
+			const timeFromFirstHours = (submission.createdAtMs - firstCreated) / (1000 * 60 * 60);
+			const timePercent = spanMs > 0 ? (submission.createdAtMs - firstCreated) / spanMs : 0.5;
+			const relativeVotes = voteRange > 0 ? (submission.votes - minVotes) / voteRange : 0.5;
+			const zScore = stdVotes > 0 ? (submission.votes - meanVotes) / stdVotes : 0;
+			const performanceRank = submissionCount > 1
+				? 1 - ((performanceRanks[index] - 1) / (submissionCount - 1))
+				: 0.5;
+
+			enrichedSubmissions.push({
+				...submission,
+				submissionOrder: order,
+				roundSubmissionCount: submissionCount,
+				orderPercentile,
+				earliness,
+				timeFromFirstHours,
+				timePercent,
+				relativeVotes,
+				zScore,
+				performanceRank
+			});
+		});
+
+		perRoundSummaries.push({
+			roundId,
+			roundName: roundLookup[roundId]?.name || 'Unknown Round',
+			submissionCount: roundSubmissions.length,
+			spanHours,
+			minVotes,
+			maxVotes,
+			meanVotes,
+			stdVotes
+		});
+	});
+
+	const sampleSize = enrichedSubmissions.length;
+	if (!sampleSize) {
+		const result = buildEmptyResult();
+		result.enrichedSubmissions = enrichedSubmissions;
+		result.summary.perRound = perRoundSummaries;
+		return result;
+	}
+
+	const earlinessValues = enrichedSubmissions.map(item => item.earliness);
+	const performanceValues = enrichedSubmissions.map(item => item.performanceRank);
+
+	const spearman = spearmanCorrelation(earlinessValues, performanceValues);
+	const pValue = spearman !== null ? correlationPValue(spearman, sampleSize) : null;
+	const isSignificant = pValue !== null && pValue < 0.05;
+	const direction = spearman === null || Math.abs(spearman) < 0.05
+		? 'neutral'
+		: spearman > 0 ? 'early_advantage' : 'late_advantage';
+
+	const meanFromGroup = (group, key) => {
+		if (!group.length) return null;
+		return mean(group.map(item => item[key]));
+	};
+
+	const earlyGroup = enrichedSubmissions.filter(item => item.orderPercentile <= 0.5);
+	const lateGroup = enrichedSubmissions.filter(item => item.orderPercentile > 0.5);
+
+	const earlyAvgVotes = meanFromGroup(earlyGroup, 'votes');
+	const lateAvgVotes = meanFromGroup(lateGroup, 'votes');
+	const earlyAvgPerformance = meanFromGroup(earlyGroup, 'performanceRank');
+	const lateAvgPerformance = meanFromGroup(lateGroup, 'performanceRank');
+
+	const bucketCount = 8;
+	const bucketStats = Array.from({ length: bucketCount }, (_, index) => ({
+		index,
+		lowerBound: index / bucketCount,
+		upperBound: (index + 1) / bucketCount,
+		center: (index + 0.5) / bucketCount,
+		count: 0,
+		voteSum: 0,
+		relativeVoteSum: 0,
+		performanceSum: 0
+	}));
+
+	enrichedSubmissions.forEach(entry => {
+		let bucketIndex = Math.floor(entry.orderPercentile * bucketCount);
+		if (bucketIndex >= bucketCount) bucketIndex = bucketCount - 1;
+		const bucket = bucketStats[bucketIndex];
+		bucket.count += 1;
+		bucket.voteSum += entry.votes;
+		bucket.relativeVoteSum += entry.relativeVotes;
+		bucket.performanceSum += entry.performanceRank;
+	});
+
+	const bucketAverages = bucketStats.map(bucket => ({
+		bucketIndex: bucket.index,
+		label: `${Math.round(bucket.lowerBound * 100)}-${Math.round(bucket.upperBound * 100)}%`,
+		center: bucket.center,
+		averageVotes: bucket.count ? bucket.voteSum / bucket.count : null,
+		averageRelativeVotes: bucket.count ? bucket.relativeVoteSum / bucket.count : null,
+		averagePerformance: bucket.count ? bucket.performanceSum / bucket.count : null,
+		count: bucket.count
+	}));
+
+	const perCompetitor = {};
+	enrichedSubmissions.forEach(entry => {
+		const key = entry.submitterId || 'unknown';
+		if (!perCompetitor[key]) {
+			perCompetitor[key] = {
+				competitor: competitorLookup[key] || { ID: key, Name: entry.submitterName || 'Unknown' },
+				entries: []
+			};
+		}
+		perCompetitor[key].entries.push(entry);
+	});
+
+	let bestEarly = null;
+	let bestLate = null;
+
+	Object.values(perCompetitor).forEach(metric => {
+		metric.entries.sort((a, b) => a.createdAtMs - b.createdAtMs);
+		const entryCount = metric.entries.length;
+		metric.sampleSize = entryCount;
+
+		const earlinessList = metric.entries.map(entry => entry.earliness);
+		const performanceList = metric.entries.map(entry => entry.performanceRank);
+		const rawVotesList = metric.entries.map(entry => entry.votes);
+
+		metric.correlation = entryCount >= 3 ? spearmanCorrelation(earlinessList, performanceList) : null;
+		metric.pValue = metric.correlation !== null ? correlationPValue(metric.correlation, entryCount) : null;
+		metric.isSignificant = metric.pValue !== null && metric.pValue < 0.05;
+		metric.averageOrderPercentile = mean(metric.entries.map(entry => entry.orderPercentile));
+		metric.averageEarliness = mean(metric.entries.map(entry => entry.earliness));
+		metric.averageVotes = mean(rawVotesList);
+		metric.averagePerformance = mean(metric.entries.map(entry => entry.performanceRank));
+		metric.averageRelativeVotes = mean(metric.entries.map(entry => entry.relativeVotes));
+
+		const earlyEntries = metric.entries.filter(entry => entry.orderPercentile <= 0.5);
+		const lateEntries = metric.entries.filter(entry => entry.orderPercentile > 0.5);
+
+		metric.earlyCount = earlyEntries.length;
+		metric.lateCount = lateEntries.length;
+		metric.earlyAvgPerformance = meanFromGroup(earlyEntries, 'performanceRank');
+		metric.lateAvgPerformance = meanFromGroup(lateEntries, 'performanceRank');
+		metric.earlyAvgVotes = meanFromGroup(earlyEntries, 'votes');
+		metric.lateAvgVotes = meanFromGroup(lateEntries, 'votes');
+
+		metric.performanceDelta = (metric.earlyAvgPerformance !== null && metric.lateAvgPerformance !== null)
+			? metric.earlyAvgPerformance - metric.lateAvgPerformance
+			: null;
+
+		metric.voteDelta = (metric.earlyAvgVotes !== null && metric.lateAvgVotes !== null)
+			? metric.earlyAvgVotes - metric.lateAvgVotes
+			: null;
+
+		if (metric.performanceDelta !== null && metric.sampleSize >= 4 && metric.earlyCount >= 2 && metric.lateCount >= 2) {
+			if (metric.performanceDelta > 0 && (!bestEarly || metric.performanceDelta > bestEarly.performanceDelta)) {
+				bestEarly = metric;
+			}
+			if (metric.performanceDelta < 0 && (!bestLate || metric.performanceDelta < bestLate.performanceDelta)) {
+				bestLate = metric;
+			}
+		}
+	});
+
+	const formatAward = (metric, leaning) => {
+		if (!metric) return null;
+		return {
+			competitor: metric.competitor,
+			voteDelta: metric.voteDelta,
+			performanceDelta: metric.performanceDelta,
+			earlyAvgVotes: metric.earlyAvgVotes,
+			lateAvgVotes: metric.lateAvgVotes,
+			earlyAvgPerformance: metric.earlyAvgPerformance,
+			lateAvgPerformance: metric.lateAvgPerformance,
+			sampleSize: metric.sampleSize,
+			earlyCount: metric.earlyCount,
+			lateCount: metric.lateCount,
+			correlation: metric.correlation,
+			pValue: metric.pValue,
+			isSignificant: metric.isSignificant,
+			leaning
+		};
+	};
+
+	const averageVotes = mean(enrichedSubmissions.map(entry => entry.votes));
+
+	return {
+		enrichedSubmissions,
+		summary: {
+			sampleSize,
+			spearmanCoefficient: spearman,
+			pValue,
+			isSignificant,
+			direction,
+			averageVotes,
+			earlyVsLate: {
+				early: {
+					count: earlyGroup.length,
+					averageVotes: earlyAvgVotes,
+					averagePerformance: earlyAvgPerformance
+				},
+				late: {
+					count: lateGroup.length,
+					averageVotes: lateAvgVotes,
+					averagePerformance: lateAvgPerformance
+				},
+				deltaVotes: (earlyAvgVotes !== null && lateAvgVotes !== null) ? earlyAvgVotes - lateAvgVotes : null,
+				deltaPerformance: (earlyAvgPerformance !== null && lateAvgPerformance !== null)
+					? earlyAvgPerformance - lateAvgPerformance
+					: null
+			},
+			bucketAverages,
+			perRound: perRoundSummaries
+		},
+		perCompetitor,
+		topEarly: formatAward(bestEarly, 'early'),
+		topLate: formatAward(bestLate, 'late')
+	};
+};
+
 // Calculate all superlatives at once
 export const calculateAllSuperlatives = (data) => {
 	const { competitors, rounds, submissions, votes } = data;
@@ -2090,6 +2519,7 @@ export const calculateAllSuperlatives = (data) => {
 	const maxVoteGiver = calculateMaxVoteGiver(votes, competitors, submissions);
 	const comebackKid = calculateComebackKid(votes, submissions, competitors, rounds);
 	const doesntVote = calculateDoesntVote(votes, competitors, rounds);
+	const submissionTiming = calculateSubmissionTimingImpact(submissions, votes, rounds, competitors);
 
 	return {
 		mostPopular,
@@ -2116,6 +2546,7 @@ export const calculateAllSuperlatives = (data) => {
 		singleVoteGiver,
 		maxVoteGiver,
 		comebackKid,
-		doesntVote
+		doesntVote,
+		submissionTiming
 	};
 };

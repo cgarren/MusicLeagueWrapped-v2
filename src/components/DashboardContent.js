@@ -77,6 +77,81 @@ const DashboardContent = ({
 	// XS-only filter for scatter
 	const [showTop20, setShowTop20] = useState(false);
 
+	const submissionTiming = superlatives?.submissionTiming;
+	const timingSummary = submissionTiming?.summary;
+	const timingChartData = React.useMemo(() => {
+		if (!timingSummary?.bucketAverages) return [];
+		return timingSummary.bucketAverages
+			.filter((bucket) => bucket && bucket.averageVotes !== null && bucket.averageVotes !== undefined)
+			.map((bucket) => ({
+				bucketLabel: bucket.label,
+				orderPercent: Math.round(((bucket.center ?? 0) * 100)),
+				averageVotes: bucket.averageVotes,
+				averagePerformance: (bucket.averagePerformance !== null && bucket.averagePerformance !== undefined)
+					? bucket.averagePerformance * 100
+					: null,
+				submissions: bucket.count
+			}));
+	}, [timingSummary]);
+
+	const timingSummaryText = React.useMemo(() => {
+		if (!timingSummary || typeof timingSummary.spearmanCoefficient !== 'number') {
+			return 'Insufficient data to evaluate submission timing.';
+		}
+		if (timingSummary.isSignificant) {
+			if (timingSummary.direction === 'early_advantage') {
+				return 'Earlier submissions tended to earn more votes.';
+			}
+			if (timingSummary.direction === 'late_advantage') {
+				return 'Later submissions tended to earn more votes.';
+			}
+			return 'Submission timing showed a statistically significant relationship with results.';
+		}
+		return 'No statistically significant relationship between submission timing and votes.';
+	}, [timingSummary]);
+
+	const timingCorrelationDisplay = (timingSummary && typeof timingSummary.spearmanCoefficient === 'number')
+		? timingSummary.spearmanCoefficient.toFixed(2)
+		: 'N/A';
+	const timingPValueDisplay = (timingSummary && typeof timingSummary.pValue === 'number')
+		? (timingSummary.pValue < 0.001 ? '<0.001' : timingSummary.pValue.toFixed(3))
+		: 'N/A';
+	const earlyVsLate = timingSummary?.earlyVsLate;
+	const deltaVotesDisplay = (earlyVsLate && typeof earlyVsLate.deltaVotes === 'number')
+		? `${earlyVsLate.deltaVotes >= 0 ? '+' : ''}${earlyVsLate.deltaVotes.toFixed(2)} votes`
+		: null;
+	const deltaPerformanceDisplay = (earlyVsLate && typeof earlyVsLate.deltaPerformance === 'number')
+		? `${earlyVsLate.deltaPerformance >= 0 ? '+' : ''}${(earlyVsLate.deltaPerformance * 100).toFixed(1)} performance pts`
+		: null;
+	const earlyVsLateSample = earlyVsLate
+		? `${earlyVsLate.early?.count ?? 0} early vs ${earlyVsLate.late?.count ?? 0} late submissions`
+		: null;
+
+	const buildTimingDetail = (award, leaningLabel) => {
+		if (!award) return 'Not enough submissions to evaluate.';
+		const lines = [];
+		if (typeof award.voteDelta === 'number') {
+			lines.push(`${award.voteDelta >= 0 ? '+' : ''}${award.voteDelta.toFixed(2)} avg votes ${leaningLabel === 'early' ? 'vs. later entries' : 'vs. earlier entries'}`);
+		}
+		if (typeof award.performanceDelta === 'number') {
+			lines.push(`${award.performanceDelta >= 0 ? '+' : ''}${(award.performanceDelta * 100).toFixed(1)} round-normalized performance pts`);
+		}
+		if (typeof award.correlation === 'number') {
+			const corrDisplay = award.correlation.toFixed(2);
+			const pDisplay = (award.pValue !== null && award.pValue !== undefined)
+				? (award.pValue < 0.001 ? '<0.001' : award.pValue.toFixed(3))
+				: 'N/A';
+			lines.push(`Correlation ρ=${corrDisplay}, p=${pDisplay}`);
+		}
+		lines.push(`Sample: ${(award.sampleSize ?? 0)} submissions (${award.earlyCount ?? 0} early / ${award.lateCount ?? 0} late)`);
+		return lines.join('\n');
+	};
+
+	const earlyTimingAward = submissionTiming?.topEarly;
+	const lateTimingAward = submissionTiming?.topLate;
+	const earlyTimingDetail = earlyTimingAward ? buildTimingDetail(earlyTimingAward, 'early') : null;
+	const lateTimingDetail = lateTimingAward ? buildTimingDetail(lateTimingAward, 'late') : null;
+
 	// Deterministic jitter helper to reduce point stacking on popularity axis
 	const getDeterministicJitter = (key, scale = 1) => {
 		if (!key) return 0;
@@ -860,6 +935,106 @@ const DashboardContent = ({
 					</Card>
 				</Box>
 
+				{submissionTiming && timingChartData.length > 0 && (
+					<Box sx={{ mb: 6, width: '100%' }}>
+						<Card>
+							<CardContent>
+								<Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap' }}>
+									<Typography variant="h5" component="h2" gutterBottom sx={{ color: theme.palette.primary.main, fontWeight: 'bold', mb: 1 }}>
+										⏱️ Submission Timing vs Votes
+									</Typography>
+								</Box>
+								<Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+									{timingSummaryText}
+								</Typography>
+								<Box sx={{ overflowX: 'auto', pb: 1 }}>
+									<Box sx={{ width: '100%', minWidth: { xs: 720, sm: '100%' }, height: { xs: 420, sm: 450, md: 480 }, minHeight: { xs: 360, sm: 400 } }}>
+										<ResponsiveContainer width="100%" height="100%">
+											<LineChart
+												data={timingChartData}
+												margin={{
+													top: 20,
+													right: isMediumScreen ? 20 : 80,
+													bottom: isMediumScreen ? 40 : 60,
+													left: isMediumScreen ? 10 : 20,
+												}}
+											>
+												<CartesianGrid strokeDasharray="3 3" stroke={theme.palette.divider} opacity={isSmallScreen ? 0.2 : 0.3} />
+												<XAxis
+													type="number"
+													dataKey="orderPercent"
+													domain={[0, 100]}
+													tick={{ fill: theme.palette.text.secondary, fontSize: isMediumScreen ? 10 : 12 }}
+													label={{
+														value: 'Submission Order (earliest → latest)',
+														position: 'bottom',
+														offset: isMediumScreen ? -5 : -10,
+														style: { textAnchor: 'middle', fill: theme.palette.text.primary, fontSize: isMediumScreen ? '12px' : '14px', fontWeight: 'bold' }
+													}}
+												/>
+												<YAxis
+													type="number"
+													dataKey="averageVotes"
+													allowDecimals
+													tick={{ fill: theme.palette.text.secondary, fontSize: isMediumScreen ? 10 : 12 }}
+													label={{
+														value: 'Average Votes',
+														angle: -90,
+														position: 'insideLeft',
+														style: { textAnchor: 'middle', fill: theme.palette.text.primary, fontSize: isMediumScreen ? '12px' : '14px', fontWeight: 'bold' }
+													}}
+												/>
+												<Tooltip content={({ active, payload }) => {
+													if (active && payload && payload.length) {
+														const datum = payload[0].payload;
+														return (
+															<Paper sx={{
+																p: { xs: 1.5, sm: 2 },
+																backgroundColor: 'white',
+																border: `2px solid ${theme.palette.primary.main}`
+															}}>
+																<Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: theme.palette.primary.main }}>
+																	{datum.bucketLabel}
+																</Typography>
+																<Typography variant="body2">
+																	Average votes: {datum.averageVotes?.toFixed(2)}
+																</Typography>
+																{datum.averagePerformance !== null && datum.averagePerformance !== undefined && (
+																	<Typography variant="body2">
+																		Normalized performance: {datum.averagePerformance.toFixed(1)}%
+																	</Typography>
+																)}
+																<Typography variant="body2">
+																	Songs in bin: {datum.submissions}
+																</Typography>
+															</Paper>
+														);
+													}
+													return null;
+												}} />
+												<Line type="monotone" dataKey="averageVotes" stroke={theme.palette.primary.main} strokeWidth={2} dot={{ r: isSmallScreen ? 4 : 5 }} activeDot={{ r: isSmallScreen ? 6 : 8 }} />
+												{typeof timingSummary?.averageVotes === 'number' && (
+													<ReferenceLine y={timingSummary.averageVotes} stroke={theme.palette.text.secondary} strokeDasharray="6 6" />
+												)}
+											</LineChart>
+										</ResponsiveContainer>
+									</Box>
+								</Box>
+								<Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
+									Correlation ρ={timingCorrelationDisplay}, p={timingPValueDisplay}
+									{deltaVotesDisplay ? ` • Early vs late avg: ${deltaVotesDisplay}` : ''}
+									{deltaPerformanceDisplay ? ` • Normalized delta: ${deltaPerformanceDisplay}` : ''}
+								</Typography>
+								{earlyVsLateSample && (
+									<Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
+										{earlyVsLateSample}
+									</Typography>
+								)}
+							</CardContent>
+						</Card>
+					</Box>
+				)}
+
 				<Typography variant="h4" component="h2" gutterBottom align="center" sx={{ mb: 4, mt: 2, fontSize: { xs: '1.5rem', sm: '2rem', md: '2.25rem' } }}>
 					League Superlatives
 				</Typography>
@@ -1282,6 +1457,48 @@ const DashboardContent = ({
 								/>
 							</Box>
 						</Grid>
+
+						{earlyTimingAward && (
+							<Grid item xs={12} sm={6} md={4} lg={4} xl={3} sx={{
+								paddingBottom: 3,
+								display: 'flex',
+								justifyContent: 'center'
+							}}>
+								<Box sx={{ width: '100%', maxWidth: '500px' }}>
+									<SuperlativeCard
+										title="Early Submission Ace"
+										description="Earned the strongest boost by submitting songs ahead of the pack"
+										winnerName={earlyTimingAward?.competitor?.Name}
+										detail={earlyTimingDetail || 'Consistently strong when submitting early.'}
+										additionalCompetitors={null}
+										isTied={false}
+										tiedWinners={null}
+										calculationKey="submissionTimingEarly"
+									/>
+								</Box>
+							</Grid>
+						)}
+
+						{lateTimingAward && (
+							<Grid item xs={12} sm={6} md={4} lg={4} xl={3} sx={{
+								paddingBottom: 3,
+								display: 'flex',
+								justifyContent: 'center'
+							}}>
+								<Box sx={{ width: '100%', maxWidth: '500px' }}>
+									<SuperlativeCard
+										title="Late Drop Legend"
+										description="Thrived even when submitting closer to the deadline"
+										winnerName={lateTimingAward?.competitor?.Name}
+										detail={lateTimingDetail || 'Found success with later submissions.'}
+										additionalCompetitors={null}
+										isTied={false}
+										tiedWinners={null}
+										calculationKey="submissionTimingLate"
+									/>
+								</Box>
+							</Grid>
+						)}
 					</Grid>
 
 					{/* Comments & Engagement Section */}
@@ -1491,7 +1708,7 @@ const DashboardContent = ({
 
 			{/* Individual Performance Tab */}
 			<TabPanel value={tabValue} index={1}>
-				<IndividualPerformance data={data} season={season} />
+				<IndividualPerformance data={data} season={season} submissionTiming={submissionTiming} />
 			</TabPanel>
 
 			{/* Round Details Modal */}

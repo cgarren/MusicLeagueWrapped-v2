@@ -154,5 +154,22 @@ How it works:
 • Count how many rounds each competitor participated in vs. total rounds
 • Calculate the number and percentage of rounds missed
 • Only competitors who missed at least 1 round are considered
-• The competitor who missed the most rounds wins`
+ • The competitor who missed the most rounds wins`,
+
+	submissionTimingEarly: `This award highlights the competitor whose songs benefited most from being submitted early in each round.
+
+How it works:
+• For every round we record when each song was submitted and convert that into a percentile (0% = earliest, 100% = latest)
+• Votes are normalized within each round so prompts with different totals can be compared fairly
+• Each competitor needs at least two "early" (first half) and two "late" (second half) submissions to qualify
+• We compare the average normalized performance of early versus late submissions
+• The competitor with the largest positive difference (early minus late) wins`,
+
+	submissionTimingLate: `This award recognizes the competitor who thrives despite submitting later in the window.
+
+How it works:
+• Same timing and normalization process as the early award
+• Requires at least two songs submitted in the first half and two in the second half of their rounds
+• We compare average performance of late submissions against early ones
+• The competitor with the largest late-over-early advantage wins`
 };
