@@ -576,7 +576,7 @@ ${roundsDescription}`;
 															fillOpacity={0.7}
 															stroke={colors[colorIndex]}
 															strokeWidth={2}
-															r={isMediumScreen ? 8 : 6}
+															r={isMediumScreen ? 6 : 8}
 														/>
 													);
 												});
