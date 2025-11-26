@@ -2148,4 +2148,4 @@ ${roundsDescription}`;
 	);
 };
 
-export default DashboardContent; 
+export default DashboardContent;
