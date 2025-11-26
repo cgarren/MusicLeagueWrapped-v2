@@ -561,9 +561,7 @@ ${roundsDescription}`;
 													});
 
 												// Create color mapping for each competitor
-												const colors = [
-													'#FF0000', '#00FF00', '#0000FF', '#FFFF00', '#FF00FF', '#00FFFF', '#800000', '#008000', '#000080', '#808000', '#800080', '#008080', '#FFA500', '#FFC0CB', '#A52A2A', '#808080', '#000000', '#DC143C', '#FFD700', '#4B0082', '#FF6347', '#32CD32', '#87CEEB', '#DDA0DD', '#F0E68C'
-												];
+												const colors = DASHBOARD_COLOR_PALETTE;
 
 												return scatterData.map((entry, index) => {
 													const competitorIndex = data.competitors.findIndex(comp => comp.ID === entry.submitterId);
@@ -608,9 +606,7 @@ ${roundsDescription}`;
 									justifyContent: 'center'
 								}}>
 									{(() => {
-										const colors = [
-											'#FF0000', '#00FF00', '#0000FF', '#FFFF00', '#FF00FF', '#00FFFF', '#800000', '#008000', '#000080', '#808000', '#800080', '#008080', '#FFA500', '#FFC0CB', '#A52A2A', '#808080', '#000000', '#DC143C', '#FFD700', '#4B0082', '#FF6347', '#32CD32', '#87CEEB', '#DDA0DD', '#F0E68C'
-										];
+										const colors = DASHBOARD_COLOR_PALETTE;
 
 										return data?.competitors?.map((competitor, index) => {
 											if (!competitor || !competitor.Name) return null;
@@ -823,9 +819,7 @@ ${roundsDescription}`;
 											/>
 											{/* Generate a line for each competitor with hover highlight and end labels */}
 											{(() => {
-												const colors = [
-													'#FF0000', '#00FF00', '#0000FF', '#FFFF00', '#FF00FF', '#00FFFF', '#800000', '#008000', '#000080', '#808000', '#800080', '#008080', '#FFA500', '#FFC0CB', '#A52A2A', '#808080', '#000000', '#DC143C', '#FFD700', '#4B0082', '#FF6347', '#32CD32', '#87CEEB', '#DDA0DD', '#F0E68C'
-												];
+												const colors = DASHBOARD_COLOR_PALETTE;
 
 												const chartData = generatePerformanceData(false);
 												const visibleSet = getFilteredCompetitors(chartData);
@@ -999,9 +993,7 @@ ${roundsDescription}`;
 											/>
 											{/* Generate a line for each competitor with hover/click highlight and end labels */}
 											{(() => {
-												const colors = [
-													'#FF0000', '#00FF00', '#0000FF', '#FFFF00', '#FF00FF', '#00FFFF', '#800000', '#008000', '#000080', '#808000', '#800080', '#008080', '#FFA500', '#FFC0CB', '#A52A2A', '#808080', '#000000', '#DC143C', '#FFD700', '#4B0082', '#FF6347', '#32CD32', '#87CEEB', '#DDA0DD', '#F0E68C'
-												];
+												const colors = DASHBOARD_COLOR_PALETTE;
 
 												const chartData = generatePerformanceData(true);
 												const visibleSet = getFilteredCompetitors(chartData);
@@ -1091,9 +1083,7 @@ ${roundsDescription}`;
 									justifyContent: 'center'
 								}}>
 									{(() => {
-										const colors = [
-											'#FF0000', '#00FF00', '#0000FF', '#FFFF00', '#FF00FF', '#00FFFF', '#800000', '#008000', '#000080', '#808000', '#800080', '#008080', '#FFA500', '#FFC0CB', '#A52A2A', '#808080', '#000000', '#DC143C', '#FFD700', '#4B0082', '#FF6347', '#32CD32', '#87CEEB', '#DDA0DD', '#F0E68C'
-										];
+										const colors = DASHBOARD_COLOR_PALETTE;
 
 										return data?.competitors?.map((competitor, index) => {
 											if (!competitor || !competitor.Name) return null;
@@ -1285,9 +1275,7 @@ ${roundsDescription}`;
 								}}>
 									{timingCompetitorNames.map((name, idx) => {
 										const colorIndex = data?.competitors?.findIndex(c => c.Name === name) ?? idx;
-										const colors = [
-											'#FF0000', '#00FF00', '#0000FF', '#FFFF00', '#FF00FF', '#00FFFF', '#800000', '#008000', '#000080', '#808000', '#800080', '#008080', '#FFA500', '#FFC0CB', '#A52A2A', '#808080', '#000000', '#DC143C', '#FFD700', '#4B0082', '#FF6347', '#32CD32', '#87CEEB', '#DDA0DD', '#F0E68C'
-										];
+										const colors = DASHBOARD_COLOR_PALETTE;
 										const color = colors[colorIndex % colors.length];
 										return (
 											<Box key={name} sx={{ display: 'flex', alignItems: 'center', gap: 0.5, minWidth: 'fit-content' }}>
@@ -2064,9 +2052,7 @@ ${roundsDescription}`;
 										{competitors.map((entry, index) => {
 											const competitorName = entry.dataKey;
 											const submission = roundSubmissions[competitorName];
-											const colors = [
-												'#FF0000', '#00FF00', '#0000FF', '#FFFF00', '#FF00FF', '#00FFFF', '#800000', '#008000', '#000080', '#808000', '#800080', '#008080', '#FFA500', '#FFC0CB', '#A52A2A', '#808080', '#000000', '#DC143C', '#FFD700', '#4B0082', '#FF6347', '#32CD32', '#87CEEB', '#DDA0DD', '#F0E68C'
-											];
+											const colors = DASHBOARD_COLOR_PALETTE;
 											const competitorIndex = data.competitors?.findIndex(c => c.Name === competitorName) || 0;
 											const color = colors[competitorIndex % colors.length];
 
