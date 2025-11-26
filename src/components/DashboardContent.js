@@ -120,7 +120,7 @@ const DashboardContent = ({
 
 		// Create chart data structure
 		const chartData = [];
-		const maxRounds = Math.max(...data.rounds.map((_, index) => index + 1));
+		const maxRounds = data.rounds.length;
 
 		// Track cumulative totals for each competitor
 		const cumulativeTotals = {};
