@@ -821,7 +821,7 @@ ${roundsDescription}`;
 													return null;
 												}}
 											/>
-											{/* Generate a line for each competitor with hover/click highlight and end labels */}
+											{/* Generate a line for each competitor with hover highlight and end labels */}
 											{(() => {
 												const colors = [
 													'#FF0000', '#00FF00', '#0000FF', '#FFFF00', '#FF00FF', '#00FFFF', '#800000', '#008000', '#000080', '#808000', '#800080', '#008080', '#FFA500', '#FFC0CB', '#A52A2A', '#808080', '#000000', '#DC143C', '#FFD700', '#4B0082', '#FF6347', '#32CD32', '#87CEEB', '#DDA0DD', '#F0E68C'
