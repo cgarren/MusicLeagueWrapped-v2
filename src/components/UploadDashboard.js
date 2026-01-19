@@ -135,7 +135,7 @@ const UploadDashboard = () => {
 						px: 2
 					}}
 				>
-					<strong>Disclaimer:</strong> This site is not endorsed or affiliated with Music League.
+					<strong>Disclaimer:</strong> This site is not endorsed by or affiliated with Music League.
 					It is an independent project created by a fan of the app to provide additional insights
 					and analytics for Music League participants.
 				</Typography>
