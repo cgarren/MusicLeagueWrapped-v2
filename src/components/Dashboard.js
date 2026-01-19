@@ -139,12 +139,14 @@ const Dashboard = ({ league = 'suit-and-tie', initialSeason = 'season1' }) => {
 
 	const leagueDisplayName = getLeagueDisplayName(league);
 
-	// Season selector component
-	const seasonSelector = availableSeasons.length > 1 ? (
+	// Season selector component (always show if there are seasons, so the Create Playlist button is accessible)
+	const seasonSelector = availableSeasons.length > 0 ? (
 		<SeasonSelector
 			seasons={availableSeasons}
 			selectedSeason={season}
 			onSeasonChange={handleSeasonChange}
+			submissions={data?.submissions || []}
+			leagueName={leagueDisplayName}
 		/>
 	) : null;
 
