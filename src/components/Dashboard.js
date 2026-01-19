@@ -62,6 +62,9 @@ const Dashboard = ({ league = 'suit-and-tie', initialSeason = 'season1' }) => {
 	}, [season, seasonsLoaded, league]);
 
 	const handleSeasonChange = (newSeason) => {
+		// Set loading immediately to prevent race condition where SeasonSelector
+		// receives the new selectedSeason but old submissions data
+		setLoading(true);
 		setSeason(newSeason);
 		// Update URL to reflect selected season on dedicated league pages
 		if (typeof window !== 'undefined' && league) {
@@ -85,6 +88,9 @@ const Dashboard = ({ league = 'suit-and-tie', initialSeason = 'season1' }) => {
 			const seasonSeg = segments[1];
 			if (seasonSeg && /^season\d+$/.test(seasonSeg)) {
 				if (seasonSeg !== season) {
+					// Set loading immediately to prevent race condition where SeasonSelector
+					// receives the new selectedSeason but old submissions data
+					setLoading(true);
 					setSeason(seasonSeg);
 				}
 			}
