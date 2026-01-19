@@ -140,8 +140,10 @@ const Dashboard = ({ league = 'suit-and-tie', initialSeason = 'season1' }) => {
 	const leagueDisplayName = getLeagueDisplayName(league);
 
 	// Season selector component (always show if there are seasons, so the Create Playlist button is accessible)
+	// key={season} resets internal state (like playlistUrl) when season changes via browser navigation
 	const seasonSelector = availableSeasons.length > 0 ? (
 		<SeasonSelector
+			key={season}
 			seasons={availableSeasons}
 			selectedSeason={season}
 			onSeasonChange={handleSeasonChange}

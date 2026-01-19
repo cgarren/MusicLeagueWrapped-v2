@@ -4,13 +4,13 @@ import QueueMusicIcon from '@mui/icons-material/QueueMusic';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import { createPlaylist, extractTrackIdsFromUris } from '../utils/spotifyApi';
 
-const SeasonSelector = ({ 
-	seasons, 
-	selectedSeason, 
-	onSeasonChange, 
+const SeasonSelector = ({
+	seasons,
+	selectedSeason,
+	onSeasonChange,
 	submissions = [],
 	leagueName = '',
-	sx = {} 
+	sx = {}
 }) => {
 	const [isCreating, setIsCreating] = useState(false);
 	const [playlistUrl, setPlaylistUrl] = useState(null);
@@ -31,9 +31,9 @@ const SeasonSelector = ({
 			const spotifyUris = submissions
 				.map(sub => sub['Spotify URI'])
 				.filter(uri => uri);
-			
+
 			const trackIds = extractTrackIdsFromUris(spotifyUris);
-			
+
 			if (trackIds.length === 0) {
 				throw new Error('No valid Spotify tracks found');
 			}
@@ -41,7 +41,7 @@ const SeasonSelector = ({
 			// Get current season label
 			const currentSeasonObj = seasons.find(s => s.id === selectedSeason);
 			const seasonLabel = currentSeasonObj?.label || selectedSeason;
-			
+
 			// Create playlist name and description
 			const playlistName = `${leagueName} - ${seasonLabel}`;
 			const playlistDescription = `All songs from ${leagueName} ${seasonLabel}. Created with Music League Wrapped.`;
@@ -97,12 +97,7 @@ const SeasonSelector = ({
 							id="season-select"
 							value={selectedSeason}
 							label="Season"
-							onChange={(e) => {
-								onSeasonChange(e.target.value);
-								// Reset playlist state when season changes
-								setPlaylistUrl(null);
-								setError(null);
-							}}
+							onChange={(e) => onSeasonChange(e.target.value)}
 							sx={{
 								'& .MuiSelect-select': {
 									py: 1
