@@ -48,7 +48,7 @@ const SeasonSelector = ({
 
 			const result = await createPlaylist(playlistName, playlistDescription, trackIds);
 
-			if (result.playlist?.url) {
+			if (result?.playlist?.url) {
 				setPlaylistUrl(result.playlist.url);
 				// Open the playlist in a new tab
 				window.open(result.playlist.url, '_blank');
