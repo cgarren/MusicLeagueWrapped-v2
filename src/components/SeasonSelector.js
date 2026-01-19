@@ -52,6 +52,9 @@ const SeasonSelector = ({
 				setPlaylistUrl(result.playlist.url);
 				// Open the playlist in a new tab
 				window.open(result.playlist.url, '_blank');
+			} else {
+				// API succeeded but no playlist URL was returned
+				setError('Playlist may have been created, but no URL was returned. Check your Spotify account.');
 			}
 		} catch (err) {
 			console.error('Error creating playlist:', err);
