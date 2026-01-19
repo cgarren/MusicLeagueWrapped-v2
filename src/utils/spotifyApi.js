@@ -1,5 +1,7 @@
 import axios from 'axios';
 
+const LAMBDA_BASE_URL = 'https://6bvfh7nkvf6bkfshv7hurbyn5y0xdktl.lambda-url.us-east-2.on.aws';
+
 /**
  * Get track data from Spotify API for multiple track IDs
  * @param {Array} trackIds - Array of Spotify track IDs
@@ -11,7 +13,7 @@ export const getTracksPopularity = async (trackIds) => {
 		const secretKey = process.env.NEXT_PUBLIC_LAMBDA_SECRET_KEY;
 		const response = await axios({
 			method: 'get',
-			url: `https://6bvfh7nkvf6bkfshv7hurbyn5y0xdktl.lambda-url.us-east-2.on.aws/getTracks?ids=${trackIds.join(',')}&secretKey=${secretKey}`
+			url: `${LAMBDA_BASE_URL}/getTracks?ids=${trackIds.join(',')}&secretKey=${secretKey}`
 		})
 
 
@@ -19,6 +21,36 @@ export const getTracksPopularity = async (trackIds) => {
 	} catch (error) {
 		console.error('Error fetching track popularity from Spotify:', error);
 		return {};
+	}
+};
+
+/**
+ * Create a Spotify playlist with the given tracks
+ * @param {string} name - Name of the playlist
+ * @param {string} description - Description of the playlist
+ * @param {Array} trackIds - Array of Spotify track IDs to add to the playlist
+ * @returns {Object} Object with playlist info including id and url
+ */
+export const createPlaylist = async (name, description, trackIds) => {
+	try {
+		const secretKey = process.env.NEXT_PUBLIC_LAMBDA_SECRET_KEY;
+		const response = await axios({
+			method: 'post',
+			url: `${LAMBDA_BASE_URL}/createPlaylistWithTracks?secretKey=${secretKey}`,
+			data: {
+				name,
+				description,
+				ids: trackIds
+			},
+			headers: {
+				'Content-Type': 'application/json'
+			}
+		});
+
+		return response.data;
+	} catch (error) {
+		console.error('Error creating Spotify playlist:', error);
+		throw error;
 	}
 };
 

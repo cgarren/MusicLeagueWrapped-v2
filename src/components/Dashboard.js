@@ -62,6 +62,9 @@ const Dashboard = ({ league = 'suit-and-tie', initialSeason = 'season1' }) => {
 	}, [season, seasonsLoaded, league]);
 
 	const handleSeasonChange = (newSeason) => {
+		// Set loading immediately to prevent race condition where SeasonSelector
+		// receives the new selectedSeason but old submissions data
+		setLoading(true);
 		setSeason(newSeason);
 		// Update URL to reflect selected season on dedicated league pages
 		if (typeof window !== 'undefined' && league) {
@@ -85,6 +88,9 @@ const Dashboard = ({ league = 'suit-and-tie', initialSeason = 'season1' }) => {
 			const seasonSeg = segments[1];
 			if (seasonSeg && /^season\d+$/.test(seasonSeg)) {
 				if (seasonSeg !== season) {
+					// Set loading immediately to prevent race condition where SeasonSelector
+					// receives the new selectedSeason but old submissions data
+					setLoading(true);
 					setSeason(seasonSeg);
 				}
 			}
@@ -139,12 +145,16 @@ const Dashboard = ({ league = 'suit-and-tie', initialSeason = 'season1' }) => {
 
 	const leagueDisplayName = getLeagueDisplayName(league);
 
-	// Season selector component
-	const seasonSelector = availableSeasons.length > 1 ? (
+	// Season selector component (always show if there are seasons, so the Create Playlist button is accessible)
+	// key={season} resets internal state (like playlistUrl) when season changes via browser navigation
+	const seasonSelector = availableSeasons.length > 0 ? (
 		<SeasonSelector
+			key={season}
 			seasons={availableSeasons}
 			selectedSeason={season}
 			onSeasonChange={handleSeasonChange}
+			submissions={data?.submissions || []}
+			leagueName={leagueDisplayName}
 		/>
 	) : null;
 
