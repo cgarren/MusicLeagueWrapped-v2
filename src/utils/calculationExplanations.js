@@ -133,6 +133,28 @@ How it works:
 • Count how many rounds each competitor was a late voter
 • The competitor with the most late voting rounds wins`,
 
+	earlyBird: `This award recognizes the competitor who consistently submits songs early and still performs well.
+
+How it works:
+• For each submission, calculate its order within the round (1st, 2nd, 3rd, etc.)
+• Submission timing is normalized to a 0-100% scale (lower % = earlier submission)
+• Song performance is normalized per round to 0-100% (higher % = more votes received)
+• Early Bird Score = Normalized Performance ÷ Normalized Timing (safeguarded against divide-by-zero)
+• This rewards high performance despite early submission timing
+• Only competitors with 3+ submissions qualify
+• The competitor with the highest Early Bird Score wins`,
+
+	lastMinute: `This award recognizes the competitor who submits songs late but still earns standout results.
+
+How it works:
+• For each submission, calculate its order within the round (1st, 2nd, 3rd, etc.)
+• Submission timing is normalized to a 0-100% scale (higher % = later submission)
+• Song performance is normalized per round to 0-100% (higher % = more votes received)
+• Last Minute Submitter Score = Normalized Performance × Normalized Timing
+• This rewards high performance combined with late submission timing
+• Only competitors with 3+ submissions qualify
+• The competitor with the highest Last Minute Submitter Score wins`,
+
 	longestComment: `This award goes to the competitor who left the single longest comment when voting.
 
 How it works:
@@ -154,5 +176,15 @@ How it works:
 • Count how many rounds each competitor participated in vs. total rounds
 • Calculate the number and percentage of rounds missed
 • Only competitors who missed at least 1 round are considered
-• The competitor who missed the most rounds wins`
+• The competitor who missed the most rounds wins`,
+
+	earlyBirdLateBloomer: `This award recognizes the competitor who tends to submit early and performs well, showing that being an early bird pays off.
+
+How it works:
+• For each round, we track the submission order (1st, 2nd, 3rd, etc.)
+• Calculate each competitor's average submission position (earlier = lower %)
+• Calculate their average performance (votes received normalized by round)
+• Early Bird Score = Performance ÷ Position (higher score = early submitter who does well)
+• Only competitors with 3+ submissions are considered
+• The competitor with the highest Early Bird Score wins`
 };
