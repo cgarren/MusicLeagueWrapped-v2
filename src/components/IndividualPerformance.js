@@ -695,7 +695,7 @@ const IndividualPerformance = ({ data, season }) => {
 													{submission.forfeited ? (
 														<MuiTooltip title="Votes forfeited — didn't vote this round" arrow>
 															<Box component="span" sx={{ color: 'error.main' }}>
-																<Box component="span" sx={{ textDecoration: 'line-through' }}>
+																<Box component="span">
 																	{submission.rawVotes}
 																</Box>
 																{' → 0'}
