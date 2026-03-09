@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Box, Typography, FormControl, InputLabel, Select, MenuItem, Paper, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Grid, Card, CardContent, useTheme, useMediaQuery } from '@mui/material';
+import { Box, Typography, FormControl, InputLabel, Select, MenuItem, Paper, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Grid, Card, CardContent, useTheme, useMediaQuery, Tooltip as MuiTooltip } from '@mui/material';
 import { ScatterChart, Scatter, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 
 const IndividualPerformance = ({ data, season }) => {
@@ -31,30 +31,84 @@ const IndividualPerformance = ({ data, season }) => {
 			const individual = competitors.find(comp => comp.ID === selectedIndividual);
 			if (!individual) return;
 
+			// Build voter participation map (which rounds each competitor voted in)
+			const voterParticipation = {};
+			votes.forEach(vote => {
+				const voterId = vote['Voter ID'];
+				const roundId = vote['Round ID'];
+				if (!voterParticipation[voterId]) voterParticipation[voterId] = new Set();
+				voterParticipation[voterId].add(roundId);
+			});
+
+			// Build composite-key submission map (URI|RoundID -> Submitter ID)
+			const submissionByKey = {};
+			submissions.forEach(sub => {
+				const key = `${sub['Spotify URI']}|${sub['Round ID']}`;
+				submissionByKey[key] = sub['Submitter ID'];
+			});
+
+			// Pre-compute vote totals per submission using composite key + no-vote penalty
+			const voteTotalsByKey = {};
+			const rawVoteTotalsByKey = {};
+			votes.forEach(vote => {
+				const key = `${vote['Spotify URI']}|${vote['Round ID']}`;
+				const submitterId = submissionByKey[key];
+				if (submitterId) {
+					const points = parseInt(vote['Points Assigned'] || 0);
+					rawVoteTotalsByKey[key] = (rawVoteTotalsByKey[key] || 0) + points;
+					if (voterParticipation[submitterId]?.has(vote['Round ID'])) {
+						voteTotalsByKey[key] = (voteTotalsByKey[key] || 0) + points;
+					}
+				}
+			});
+
 			// Get all submissions by this individual
 			const individualSubmissions = submissions.filter(sub =>
 				sub['Submitter ID'] === selectedIndividual
 			);
 
+			// Build a set of round IDs this individual submitted in
+			const submittedRoundIds = new Set(individualSubmissions.map(s => s['Round ID']));
+
 			// Process submissions to include round details and vote counts
 			const processedSubmissions = individualSubmissions.map(submission => {
 				const round = rounds.find(r => r.ID === submission['Round ID']);
 				const roundIndex = rounds.findIndex(r => r.ID === submission['Round ID']);
-				const submissionVotes = votes.filter(vote => vote['Spotify URI'] === submission['Spotify URI']);
-				const totalVotes = submissionVotes.reduce((sum, vote) => sum + parseInt(vote['Points Assigned'] || 0), 0);
+				const key = `${submission['Spotify URI']}|${submission['Round ID']}`;
+				const totalVotes = voteTotalsByKey[key] || 0;
+				const rawVotes = rawVoteTotalsByKey[key] || 0;
+				const didVote = voterParticipation[selectedIndividual]?.has(submission['Round ID']);
+				const forfeited = !didVote && rawVotes > 0;
 
 				return {
 					...submission,
 					roundName: round?.Name || 'Unknown',
 					roundNumber: roundIndex + 1,
-					totalVotes
+					totalVotes,
+					rawVotes,
+					forfeited,
+					noSubmission: false
 				};
 			});
 
-			// Sort by round index as defined in the rounds data
-			processedSubmissions.sort((a, b) => {
-				return a.roundNumber - b.roundNumber;
+			// Add placeholder rows for rounds without a submission
+			rounds.forEach((round, index) => {
+				if (!submittedRoundIds.has(round.ID)) {
+					processedSubmissions.push({
+						'Spotify URI': null,
+						'Round ID': round.ID,
+						roundName: round.Name || 'Unknown',
+						roundNumber: index + 1,
+						totalVotes: 0,
+						rawVotes: 0,
+						forfeited: false,
+						noSubmission: true
+					});
+				}
 			});
+
+			// Sort by round number
+			processedSubmissions.sort((a, b) => a.roundNumber - b.roundNumber);
 
 			setIndividualSubmissions(processedSubmissions);
 
@@ -85,14 +139,13 @@ const IndividualPerformance = ({ data, season }) => {
 
 			setScatterData(scatterPlotData);
 
-			// Calculate overall rank
+			// Calculate overall rank using pre-computed vote totals
 			const individualPointsMap = {};
 
 			submissions.forEach(submission => {
 				const submitterId = submission['Submitter ID'];
-				const submissionVotes = votes.filter(vote => vote['Spotify URI'] === submission['Spotify URI']);
-				const totalVotes = submissionVotes.reduce((sum, vote) => sum + parseInt(vote['Points Assigned'] || 0), 0);
-
+				const key = `${submission['Spotify URI']}|${submission['Round ID']}`;
+				const totalVotes = voteTotalsByKey[key] || 0;
 				individualPointsMap[submitterId] = (individualPointsMap[submitterId] || 0) + totalVotes;
 			});
 
@@ -101,13 +154,16 @@ const IndividualPerformance = ({ data, season }) => {
 				.sort((a, b) => b.points - a.points);
 
 			const rank = sortedIndividuals.findIndex(c => c.id === selectedIndividual) + 1;
+			const totalVotesReceived = individualPointsMap[selectedIndividual] || 0;
 
 			// Find biggest fan (who gave them the most points)
 			const pointsByVoter = {};
 
 			votes.forEach(vote => {
-				const submission = submissions.find(sub => sub['Spotify URI'] === vote['Spotify URI']);
-				if (!submission || submission['Submitter ID'] !== selectedIndividual) return;
+				const key = `${vote['Spotify URI']}|${vote['Round ID']}`;
+				const submitterId = submissionByKey[key];
+				if (!submitterId || submitterId !== selectedIndividual) return;
+				if (!voterParticipation[submitterId]?.has(vote['Round ID'])) return;
 
 				const voterId = vote['Voter ID'];
 				pointsByVoter[voterId] = (pointsByVoter[voterId] || 0) + parseInt(vote['Points Assigned'] || 0);
@@ -141,9 +197,9 @@ const IndividualPerformance = ({ data, season }) => {
 
 				// Points from selectedIndividual to otherComp
 				const votesToOther = votes.filter(vote => {
-					const submission = submissions.find(sub => sub['Spotify URI'] === vote['Spotify URI']);
-					return submission &&
-						submission['Submitter ID'] === otherComp.ID &&
+					const key = `${vote['Spotify URI']}|${vote['Round ID']}`;
+					const submitterId = submissionByKey[key];
+					return submitterId === otherComp.ID &&
 						vote['Voter ID'] === selectedIndividual;
 				});
 
@@ -155,9 +211,9 @@ const IndividualPerformance = ({ data, season }) => {
 
 				// Points from otherComp to selectedIndividual
 				const votesFromOther = votes.filter(vote => {
-					const submission = submissions.find(sub => sub['Spotify URI'] === vote['Spotify URI']);
-					return submission &&
-						submission['Submitter ID'] === selectedIndividual &&
+					const key = `${vote['Spotify URI']}|${vote['Round ID']}`;
+					const submitterId = submissionByKey[key];
+					return submitterId === selectedIndividual &&
 						vote['Voter ID'] === otherComp.ID;
 				});
 
@@ -193,25 +249,12 @@ const IndividualPerformance = ({ data, season }) => {
 				// Get all votes by otherComp
 				const otherVotes = votes.filter(vote => vote['Voter ID'] === otherComp.ID);
 
-				// Build submission to round mapping for participation tracking
-				const submissionToRound = {};
-				submissions.forEach(submission => {
-					submissionToRound[submission['Spotify URI']] = submission['Round ID'];
-				});
-
 				// Track rounds each voter participated in
 				const selectedRounds = new Set();
 				const otherRounds = new Set();
 
-				selectedVotes.forEach(vote => {
-					const roundId = submissionToRound[vote['Spotify URI']];
-					if (roundId) selectedRounds.add(roundId);
-				});
-
-				otherVotes.forEach(vote => {
-					const roundId = submissionToRound[vote['Spotify URI']];
-					if (roundId) otherRounds.add(roundId);
-				});
+				selectedVotes.forEach(vote => selectedRounds.add(vote['Round ID']));
+				otherVotes.forEach(vote => otherRounds.add(vote['Round ID']));
 
 				const selectedRoundCount = selectedRounds.size;
 				const otherRoundCount = otherRounds.size;
@@ -227,26 +270,27 @@ const IndividualPerformance = ({ data, season }) => {
 				// Require at least 60% participation overlap to ensure fair comparison
 				if (participationRatio < 0.6) return;
 
-				// Find common songs voted on
-				const commonSongURIs = new Set();
+				// Find common submissions voted on (using composite key to handle duplicates)
+				const commonKeys = new Set();
 
 				selectedVotes.forEach(vote => {
-					const uri = vote['Spotify URI'];
-					if (otherVotes.some(otherVote => otherVote['Spotify URI'] === uri)) {
-						commonSongURIs.add(uri);
+					const key = `${vote['Spotify URI']}|${vote['Round ID']}`;
+					if (otherVotes.some(ov => `${ov['Spotify URI']}|${ov['Round ID']}` === key)) {
+						commonKeys.add(key);
 					}
 				});
 
 				// Enhanced minimum sample size: require at least 10 common votes
-				if (commonSongURIs.size < 10) return;
+				if (commonKeys.size < 10) return;
 
 				// Calculate similarity if there are enough common songs
 				let totalDifference = 0;
 				let count = 0;
 
-				commonSongURIs.forEach(uri => {
-					const selectedVote = selectedVotes.find(vote => vote['Spotify URI'] === uri);
-					const otherVote = otherVotes.find(vote => vote['Spotify URI'] === uri);
+				commonKeys.forEach(key => {
+					const [uri, roundId] = key.split('|');
+					const selectedVote = selectedVotes.find(v => v['Spotify URI'] === uri && v['Round ID'] === roundId);
+					const otherVote = otherVotes.find(v => v['Spotify URI'] === uri && v['Round ID'] === roundId);
 
 					if (selectedVote && otherVote) {
 						const diff = Math.abs(
@@ -277,7 +321,7 @@ const IndividualPerformance = ({ data, season }) => {
 				voterSimilarities.push({
 					competitor: otherComp,
 					similarity,
-					commonSongs: commonSongURIs.size,
+					commonSongs: commonKeys.size,
 					participationRatio: participationRatio.toFixed(3),
 					avgDifference: avgDifference.toFixed(2)
 				});
@@ -290,13 +334,13 @@ const IndividualPerformance = ({ data, season }) => {
 			const avgPopularity = individualSubmissions.reduce((sum, sub) => sum + (sub.popularity || 0), 0) /
 				(individualSubmissions.filter(sub => sub.popularity !== null).length || 1);
 
-			// Find the song that got the most votes
+			// Find the song that got the most votes (using pre-computed totals)
 			let bestSong = null;
 			let bestSongVotes = 0;
 
 			individualSubmissions.forEach(sub => {
-				const submissionVotes = votes.filter(vote => vote['Spotify URI'] === sub['Spotify URI']);
-				const totalVotes = submissionVotes.reduce((sum, vote) => sum + parseInt(vote['Points Assigned'] || 0), 0);
+				const key = `${sub['Spotify URI']}|${sub['Round ID']}`;
+				const totalVotes = voteTotalsByKey[key] || 0;
 
 				if (totalVotes > bestSongVotes) {
 					bestSongVotes = totalVotes;
@@ -345,6 +389,7 @@ const IndividualPerformance = ({ data, season }) => {
 			setIndividualStats({
 				individual,
 				rank,
+				totalVotesReceived,
 				biggestFan,
 				biggestFanPoints,
 				biggestCritic,
@@ -463,6 +508,9 @@ const IndividualPerformance = ({ data, season }) => {
 									<Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', flexGrow: 1 }}>
 										<Typography variant="h4" color="primary" sx={{ fontWeight: 'bold' }}>
 											#{individualStats.rank}
+										</Typography>
+										<Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+											{individualStats.totalVotesReceived} votes total
 										</Typography>
 									</Box>
 								</CardContent>
@@ -618,8 +666,12 @@ const IndividualPerformance = ({ data, season }) => {
 							<TableBody>
 								{individualSubmissions.map((submission) => (
 									<TableRow
-										key={submission['Spotify URI'] + submission['Round ID']}
-										sx={{ '&:last-child td, &:last-child th': { border: 0 } }}
+										key={(submission['Spotify URI'] || 'no-sub') + submission['Round ID']}
+										sx={{
+											'&:last-child td, &:last-child th': { border: 0 },
+											...(submission.noSubmission && { bgcolor: 'action.hover', opacity: 0.7 }),
+											...(submission.forfeited && { bgcolor: 'rgba(211, 47, 47, 0.04)' })
+										}}
 									>
 										<TableCell component="th" scope="row">
 											{submission.roundNumber}
@@ -627,10 +679,34 @@ const IndividualPerformance = ({ data, season }) => {
 										<TableCell>
 											{submission.roundName}
 										</TableCell>
-										<TableCell>{submission.Title}</TableCell>
-										<TableCell>{submission["Artist(s)"]}</TableCell>
-										<TableCell align="right">{submission.popularity || 'N/A'}</TableCell>
-										<TableCell align="right">{submission.totalVotes}</TableCell>
+										{submission.noSubmission ? (
+											<>
+												<TableCell colSpan={3} sx={{ fontStyle: 'italic', color: 'text.disabled', textAlign: 'center' }}>
+													No submission
+												</TableCell>
+												<TableCell align="right" sx={{ color: 'text.disabled' }}>—</TableCell>
+											</>
+										) : (
+											<>
+												<TableCell>{submission.Title}</TableCell>
+												<TableCell>{submission["Artist(s)"]}</TableCell>
+												<TableCell align="right">{submission.popularity || 'N/A'}</TableCell>
+												<TableCell align="right">
+													{submission.forfeited ? (
+														<MuiTooltip title="Votes forfeited — didn't vote this round" arrow>
+															<Box component="span" sx={{ color: 'error.main' }}>
+																<Box component="span" sx={{ textDecoration: 'line-through' }}>
+																	{submission.rawVotes}
+																</Box>
+																{' → 0'}
+															</Box>
+														</MuiTooltip>
+													) : (
+														submission.totalVotes
+													)}
+												</TableCell>
+											</>
+										)}
 									</TableRow>
 								))}
 							</TableBody>

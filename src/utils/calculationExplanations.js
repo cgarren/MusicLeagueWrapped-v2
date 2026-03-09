@@ -5,7 +5,7 @@ export const CALCULATION_EXPLANATIONS = {
 How it works:
 • We sum up all the points/votes received for each competitor's submissions
 • The competitor with the highest total wins
-• Only considers votes from other participants (self-votes are excluded)`,
+• If a competitor didn't vote in a round, the votes their submission received that round are forfeited (per Music League rules)`,
 
 	consistentlyPopular: `This award recognizes the competitor with the highest average votes per submission, showing consistent quality across their picks.
 
@@ -13,7 +13,8 @@ How it works:
 • Calculate total votes received ÷ number of submissions for each competitor
 • Only competitors with 3+ submissions are considered
 • The competitor with the highest average wins
-• Though similar to most popular overall, this rewards consistency over volume and accounts for competitors who submit less songs for whatever reason`,
+• Though similar to most popular overall, this rewards consistency over volume and accounts for competitors who submit less songs for whatever reason
+• If a competitor didn't vote in a round, the votes their submission received that round are forfeited (per Music League rules)`,
 
 	mostAverage: `This award goes to the competitor whose average score is closest to the overall league average, representing the most "typical" performer.
 
@@ -21,14 +22,16 @@ How it works:
 • Calculate each competitor's average votes per submission
 • Calculate the overall league average across all competitors
 • Find who has the smallest difference from the league average
-• Only competitors with 3+ submissions are considered`,
+• Only competitors with 3+ submissions are considered
+• If a competitor didn't vote in a round, the votes their submission received that round are forfeited (per Music League rules)`,
 
 	bestPerformance: `This award recognizes the highest single-round performance in the entire season.
 
 How it works:
 • Calculate total votes received for each song submission in each round
 • Find the submission that received the most votes in any single round
-• The submitter of that song wins`,
+• The submitter of that song wins
+• If a competitor didn't vote in a round, the votes their submission received that round are forfeited (per Music League rules)`,
 
 	comebackKid: `This award goes to the competitor who made the biggest comeback from their lowest-scoring submission to their best subsequent performance.
 
@@ -37,7 +40,8 @@ How it works:
 • Look for their highest-scoring submission that came after that low point
 • Calculate the difference (comeback magnitude)
 • Must be at least 5 points improvement to qualify
-• The competitor with the biggest comeback wins`,
+• The competitor with the biggest comeback wins
+• If a competitor didn't vote in a round, the votes their submission received that round are forfeited (per Music League rules)`,
 
 	trendSetter: `This award recognizes the competitor who submitted the most obscure songs based on Spotify popularity scores.
 
