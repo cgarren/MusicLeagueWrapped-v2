@@ -689,7 +689,7 @@ export const calculateMostCompatible = (votes, submissions, competitors) => {
 		restOfField,
 		isTied,
 		tiedWinners: tiedWinnersNames,
-		tiedPairs: isTied ? tiedPairs : null
+		tiedPairs: isTied ? tiedPairs.map(p => ({ ...p, score: p.score.toFixed(2) })) : null
 	};
 };
 
@@ -809,7 +809,7 @@ export const calculateLeastCompatible = (votes, submissions, competitors) => {
 		restOfField,
 		isTied,
 		tiedWinners: tiedWinnersNames,
-		tiedPairs: isTied ? tiedPairs : null
+		tiedPairs: isTied ? tiedPairs.map(p => ({ ...p, score: p.score.toFixed(2) })) : null
 	};
 };
 
