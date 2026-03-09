@@ -123,11 +123,32 @@ const DashboardContent = ({
 	const generatePerformanceData = (isCumulative = false) => {
 		if (!data?.submissions || !data?.votes || !data?.competitors || !data?.rounds) return [];
 
-		// Calculate vote totals for each submission
+		// Build voter participation map for no-vote penalty
+		const voterParticipation = {};
+		data.votes.forEach(vote => {
+			const voterId = vote['Voter ID'];
+			const roundId = vote['Round ID'];
+			if (!voterParticipation[voterId]) {
+				voterParticipation[voterId] = new Set();
+			}
+			voterParticipation[voterId].add(roundId);
+		});
+
+		// Map each submission (by URI + Round ID) to its submitter
+		const submissionToSubmitter = {};
+		data.submissions.forEach(submission => {
+			const key = `${submission['Spotify URI']}|${submission['Round ID']}`;
+			submissionToSubmitter[key] = submission['Submitter ID'];
+		});
+
+		// Calculate vote totals per submission, applying no-vote penalty
 		const submissionVotes = {};
 		data.votes.forEach(vote => {
-			const uri = vote['Spotify URI'];
-			submissionVotes[uri] = (submissionVotes[uri] || 0) + parseInt(vote['Points Assigned'] || 0);
+			const key = `${vote['Spotify URI']}|${vote['Round ID']}`;
+			const submitterId = submissionToSubmitter[key];
+			if (submitterId && voterParticipation[submitterId]?.has(vote['Round ID'])) {
+				submissionVotes[key] = (submissionVotes[key] || 0) + parseInt(vote['Points Assigned'] || 0);
+			}
 		});
 
 		// Create a map of round IDs to round numbers for proper ordering
@@ -142,7 +163,8 @@ const DashboardContent = ({
 			const competitorId = submission['Submitter ID'];
 			const roundId = submission['Round ID'];
 			const roundNumber = roundOrder[roundId];
-			const votes = submissionVotes[submission['Spotify URI']] || 0;
+			const key = `${submission['Spotify URI']}|${roundId}`;
+			const votes = submissionVotes[key] || 0;
 
 			if (!competitorRoundData[competitorId]) {
 				competitorRoundData[competitorId] = {};

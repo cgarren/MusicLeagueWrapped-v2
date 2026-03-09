@@ -120,21 +120,37 @@ export const loadAllData = async (season = 'season1', league = 'suit-and-tie') =
 	}
 };
 
+// Build a map of which rounds each competitor voted in.
+// Used to enforce the Music League rule: if you don't vote in a round,
+// you forfeit the votes your submission received that round.
+const buildVoterParticipation = (votes) => {
+	const roundsByVoter = {};
+	votes.forEach(vote => {
+		const voterId = vote['Voter ID'];
+		const roundId = vote['Round ID'];
+		if (!roundsByVoter[voterId]) {
+			roundsByVoter[voterId] = new Set();
+		}
+		roundsByVoter[voterId].add(roundId);
+	});
+	return roundsByVoter;
+};
+
 // Calculate most popular competitor (most total votes received)
 export const calculateMostPopular = (votes, submissions, competitors) => {
 	const pointsBySubmitter = {};
+	const voterParticipation = buildVoterParticipation(votes);
 
-	// Map submissions to their submitters
 	const submissionMap = submissions.reduce((map, submission) => {
-		map[submission['Spotify URI']] = submission['Submitter ID'];
+		const key = `${submission['Spotify URI']}|${submission['Round ID']}`;
+		map[key] = submission['Submitter ID'];
 		return map;
 	}, {});
 
-	// Count points by submitter
 	votes.forEach(vote => {
-		const spotifyUri = vote['Spotify URI'];
-		const submitterId = submissionMap[spotifyUri];
-		if (submitterId) {
+		const key = `${vote['Spotify URI']}|${vote['Round ID']}`;
+		const submitterId = submissionMap[key];
+		if (submitterId && voterParticipation[submitterId]?.has(vote['Round ID'])) {
 			pointsBySubmitter[submitterId] = (pointsBySubmitter[submitterId] || 0) + parseInt(vote['Points Assigned'] || 0);
 		}
 	});
@@ -186,20 +202,20 @@ export const calculateMostPopular = (votes, submissions, competitors) => {
 export const calculateLeastPopular = (votes, submissions, competitors) => {
 	const pointsBySubmitter = {};
 	const submissionCountBySubmitter = {};
+	const voterParticipation = buildVoterParticipation(votes);
 
-	// Map submissions to their submitters
 	const submissionMap = submissions.reduce((map, submission) => {
 		const submitterId = submission['Submitter ID'];
-		map[submission['Spotify URI']] = submitterId;
+		const key = `${submission['Spotify URI']}|${submission['Round ID']}`;
+		map[key] = submitterId;
 		submissionCountBySubmitter[submitterId] = (submissionCountBySubmitter[submitterId] || 0) + 1;
 		return map;
 	}, {});
 
-	// Count points by submitter
 	votes.forEach(vote => {
-		const spotifyUri = vote['Spotify URI'];
-		const submitterId = submissionMap[spotifyUri];
-		if (submitterId) {
+		const key = `${vote['Spotify URI']}|${vote['Round ID']}`;
+		const submitterId = submissionMap[key];
+		if (submitterId && voterParticipation[submitterId]?.has(vote['Round ID'])) {
 			pointsBySubmitter[submitterId] = (pointsBySubmitter[submitterId] || 0) + parseInt(vote['Points Assigned'] || 0);
 		}
 	});
@@ -257,20 +273,20 @@ export const calculateLeastPopular = (votes, submissions, competitors) => {
 export const calculateMostAverage = (votes, submissions, competitors) => {
 	const pointsBySubmitter = {};
 	const submissionCountBySubmitter = {};
+	const voterParticipation = buildVoterParticipation(votes);
 
-	// Map submissions to their submitters
 	const submissionMap = submissions.reduce((map, submission) => {
 		const submitterId = submission['Submitter ID'];
-		map[submission['Spotify URI']] = submitterId;
+		const key = `${submission['Spotify URI']}|${submission['Round ID']}`;
+		map[key] = submitterId;
 		submissionCountBySubmitter[submitterId] = (submissionCountBySubmitter[submitterId] || 0) + 1;
 		return map;
 	}, {});
 
-	// Count points by submitter
 	votes.forEach(vote => {
-		const spotifyUri = vote['Spotify URI'];
-		const submitterId = submissionMap[spotifyUri];
-		if (submitterId) {
+		const key = `${vote['Spotify URI']}|${vote['Round ID']}`;
+		const submitterId = submissionMap[key];
+		if (submitterId && voterParticipation[submitterId]?.has(vote['Round ID'])) {
 			pointsBySubmitter[submitterId] = (pointsBySubmitter[submitterId] || 0) + parseInt(vote['Points Assigned'] || 0);
 		}
 	});
@@ -342,11 +358,11 @@ export const calculateMostAverage = (votes, submissions, competitors) => {
 export const calculateBestPerformance = (votes, submissions, competitors, rounds) => {
 	const scoresBySubmissionAndRound = {};
 	const submissionData = {};
+	const voterParticipation = buildVoterParticipation(votes);
 
-	// Map submissions to their submitters and rounds
 	submissions.forEach(submission => {
-		const spotifyUri = submission['Spotify URI'];
-		submissionData[spotifyUri] = {
+		const key = `${submission['Spotify URI']}|${submission['Round ID']}`;
+		submissionData[key] = {
 			submitterId: submission['Submitter ID'],
 			roundId: submission['Round ID'],
 			title: submission['Title'],
@@ -354,14 +370,11 @@ export const calculateBestPerformance = (votes, submissions, competitors, rounds
 		};
 	});
 
-	// Count points by submission and round
 	votes.forEach(vote => {
-		const spotifyUri = vote['Spotify URI'];
-		const roundId = vote['Round ID'];
-		const submissionInfo = submissionData[spotifyUri];
+		const key = `${vote['Spotify URI']}|${vote['Round ID']}`;
+		const submissionInfo = submissionData[key];
 
-		if (submissionInfo && submissionInfo.roundId === roundId) {
-			const key = `${spotifyUri}|${roundId}`;
+		if (submissionInfo && voterParticipation[submissionInfo.submitterId]?.has(vote['Round ID'])) {
 			scoresBySubmissionAndRound[key] = (scoresBySubmissionAndRound[key] || 0) + parseInt(vote['Points Assigned'] || 0);
 		}
 	});
@@ -370,12 +383,11 @@ export const calculateBestPerformance = (votes, submissions, competitors, rounds
 	const performances = [];
 
 	Object.entries(scoresBySubmissionAndRound).forEach(([key, score]) => {
-		const [spotifyUri, roundId] = key.split('|');
-		const submissionInfo = submissionData[spotifyUri];
+		const submissionInfo = submissionData[key];
 
 		if (submissionInfo) {
 			const competitor = competitors.find(comp => comp.ID === submissionInfo.submitterId);
-			const round = rounds.find(r => r.ID === roundId);
+			const round = rounds.find(r => r.ID === submissionInfo.roundId);
 
 			performances.push({
 				competitor,
@@ -564,7 +576,8 @@ export const calculateMostCompatible = (votes, submissions, competitors) => {
 	// Build a map of submissions to submitters
 	const submissionToSubmitter = {};
 	submissions.forEach(submission => {
-		submissionToSubmitter[submission['Spotify URI']] = submission['Submitter ID'];
+		const key = `${submission['Spotify URI']}|${submission['Round ID']}`;
+		submissionToSubmitter[key] = submission['Submitter ID'];
 	});
 
 	// Build a matrix of votes: how many points A gave to B's submissions
@@ -573,8 +586,8 @@ export const calculateMostCompatible = (votes, submissions, competitors) => {
 
 	votes.forEach(vote => {
 		const voterId = vote['Voter ID'];
-		const submissionUri = vote['Spotify URI'];
-		const submitterId = submissionToSubmitter[submissionUri];
+		const key = `${vote['Spotify URI']}|${vote['Round ID']}`;
+		const submitterId = submissionToSubmitter[key];
 		const points = parseInt(vote['Points Assigned'] || 0);
 
 		// Skip self-votes
@@ -589,7 +602,7 @@ export const calculateMostCompatible = (votes, submissions, competitors) => {
 
 		// Count submissions
 		if (!submissionCounts[submitterId]) submissionCounts[submitterId] = new Set();
-		submissionCounts[submitterId].add(submissionUri);
+		submissionCounts[submitterId].add(key);
 	});
 
 	// Calculate compatibility scores (average points given) for all pairs
@@ -682,10 +695,10 @@ export const calculateMostCompatible = (votes, submissions, competitors) => {
 
 // Calculate least compatible pair of competitors
 export const calculateLeastCompatible = (votes, submissions, competitors) => {
-	// Same setup as most compatible
 	const submissionToSubmitter = {};
 	submissions.forEach(submission => {
-		submissionToSubmitter[submission['Spotify URI']] = submission['Submitter ID'];
+		const key = `${submission['Spotify URI']}|${submission['Round ID']}`;
+		submissionToSubmitter[key] = submission['Submitter ID'];
 	});
 
 	const voteMatrix = {};
@@ -693,8 +706,8 @@ export const calculateLeastCompatible = (votes, submissions, competitors) => {
 
 	votes.forEach(vote => {
 		const voterId = vote['Voter ID'];
-		const submissionUri = vote['Spotify URI'];
-		const submitterId = submissionToSubmitter[submissionUri];
+		const key = `${vote['Spotify URI']}|${vote['Round ID']}`;
+		const submitterId = submissionToSubmitter[key];
 		const points = parseInt(vote['Points Assigned'] || 0);
 
 		// Skip self-votes
@@ -709,7 +722,7 @@ export const calculateLeastCompatible = (votes, submissions, competitors) => {
 
 		// Count submissions
 		if (!submissionCounts[submitterId]) submissionCounts[submitterId] = new Set();
-		submissionCounts[submitterId].add(submissionUri);
+		submissionCounts[submitterId].add(key);
 	});
 
 	// Calculate compatibility scores (average points given) for all pairs
@@ -802,20 +815,14 @@ export const calculateLeastCompatible = (votes, submissions, competitors) => {
 
 // Calculate voting similarity between competitors
 export const calculateVotingSimilarity = (votes, submissions, competitors) => {
-	// Build a map of submissions to rounds
-	const submissionToRound = {};
-	submissions.forEach(submission => {
-		submissionToRound[submission['Spotify URI']] = submission['Round ID'];
-	});
-
 	// Create a mapping of voter -> round -> submission -> points
 	const votingPatterns = {};
-	const voterRoundCounts = {}; // Track how many rounds each voter participated in
+	const voterRoundCounts = {};
 
 	votes.forEach(vote => {
 		const voterId = vote['Voter ID'];
 		const submissionUri = vote['Spotify URI'];
-		const roundId = submissionToRound[submissionUri];
+		const roundId = vote['Round ID'];
 		const points = parseInt(vote['Points Assigned'] || 0);
 
 		if (!votingPatterns[voterId]) {
@@ -1552,10 +1559,11 @@ export const calculateZeroVoteGiver = (votes, competitors) => {
 
 // Calculate the competitor who gives the most maximum-point votes (Max-Vote Giver)
 export const calculateMaxVoteGiver = (votes, competitors, submissions) => {
-	// Create a map of Spotify URIs to song details
+	// Create a map using composite key (URI + Round ID) to song details
 	const submissionDetails = {};
 	submissions.forEach(submission => {
-		submissionDetails[submission['Spotify URI']] = {
+		const key = `${submission['Spotify URI']}|${submission['Round ID']}`;
+		submissionDetails[key] = {
 			title: submission['Title'],
 			artist: submission['Artist(s)'],
 			submitterId: submission['Submitter ID']
@@ -1579,7 +1587,7 @@ export const calculateMaxVoteGiver = (votes, competitors, submissions) => {
 
 		votesByVoterAndRound[voterId][roundId].push({
 			points,
-			submissionUri: vote['Spotify URI']
+			submissionKey: `${vote['Spotify URI']}|${roundId}`
 		});
 	});
 
@@ -1610,10 +1618,10 @@ export const calculateMaxVoteGiver = (votes, competitors, submissions) => {
 			// Check if all points went to a single submission
 			const pointsBySubmission = {};
 			votesInRound.forEach(vote => {
-				if (!pointsBySubmission[vote.submissionUri]) {
-					pointsBySubmission[vote.submissionUri] = 0;
+				if (!pointsBySubmission[vote.submissionKey]) {
+					pointsBySubmission[vote.submissionKey] = 0;
 				}
-				pointsBySubmission[vote.submissionUri] += vote.points;
+				pointsBySubmission[vote.submissionKey] += vote.points;
 			});
 
 			// Find the maximum points given to any single submission
@@ -1624,19 +1632,19 @@ export const calculateMaxVoteGiver = (votes, competitors, submissions) => {
 				allInRounds++;
 
 				// Find which submission got all the votes
-				const allInSubmissionUri = Object.keys(pointsBySubmission).find(
-					uri => pointsBySubmission[uri] === totalPointsInRound
+				const allInSubmissionKey = Object.keys(pointsBySubmission).find(
+					key => pointsBySubmission[key] === totalPointsInRound
 				);
 
 				// Store example with song details
-				if (allInSubmissionUri && submissionDetails[allInSubmissionUri]) {
-					const songInfo = submissionDetails[allInSubmissionUri];
+				if (allInSubmissionKey && submissionDetails[allInSubmissionKey]) {
+					const songInfo = submissionDetails[allInSubmissionKey];
 					allInExamples.push({
 						roundId,
 						points: totalPointsInRound,
 						songTitle: songInfo.title,
 						songArtist: songInfo.artist,
-						submissionUri: allInSubmissionUri
+						submissionKey: allInSubmissionKey
 					});
 				}
 			}
@@ -1702,21 +1710,21 @@ export const calculateMaxVoteGiver = (votes, competitors, submissions) => {
 
 // Calculate the competitor with the biggest comeback (Comeback Kid)
 export const calculateComebackKid = (votes, submissions, competitors, rounds) => {
-	// Group submissions by submitter and round
 	const submissionsBySubmitterAndRound = {};
 	const submissionData = {};
+	const voterParticipation = buildVoterParticipation(votes);
 
 	submissions.forEach(submission => {
 		const submitterId = submission['Submitter ID'];
 		const roundId = submission['Round ID'];
-		const spotifyUri = submission['Spotify URI'];
+		const submissionKey = `${submission['Spotify URI']}|${roundId}`;
 
 		if (!submissionsBySubmitterAndRound[submitterId]) {
 			submissionsBySubmitterAndRound[submitterId] = {};
 		}
-		submissionsBySubmitterAndRound[submitterId][roundId] = spotifyUri;
+		submissionsBySubmitterAndRound[submitterId][roundId] = submissionKey;
 
-		submissionData[spotifyUri] = {
+		submissionData[submissionKey] = {
 			submitterId,
 			roundId,
 			title: submission['Title'],
@@ -1724,16 +1732,18 @@ export const calculateComebackKid = (votes, submissions, competitors, rounds) =>
 		};
 	});
 
-	// Calculate scores for each submission
 	const scoresBySubmission = {};
 	votes.forEach(vote => {
-		const spotifyUri = vote['Spotify URI'];
+		const key = `${vote['Spotify URI']}|${vote['Round ID']}`;
+		const submissionInfo = submissionData[key];
 		const points = parseInt(vote['Points Assigned'] || 0);
 
-		if (!scoresBySubmission[spotifyUri]) {
-			scoresBySubmission[spotifyUri] = 0;
+		if (submissionInfo && voterParticipation[submissionInfo.submitterId]?.has(vote['Round ID'])) {
+			if (!scoresBySubmission[key]) {
+				scoresBySubmission[key] = 0;
+			}
+			scoresBySubmission[key] += points;
 		}
-		scoresBySubmission[spotifyUri] += points;
 	});
 
 	// Calculate comeback scores for each competitor
