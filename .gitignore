@@ -8,9 +8,12 @@
 # testing
 /coverage
 
-# production
-/build
-/out
+# Next.js build and export outputs
+/.next/
+/out/
+/build/
+/dist/
+next-env.d.ts
 
 # misc
 .DS_Store
@@ -23,6 +26,3 @@
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
-
-.next
-next-env.d.ts

@@ -23,7 +23,8 @@
   "scripts": {
     "dev": "next dev --turbopack",
     "build": "next build",
-    "start": "npx serve@latest ./build"
+    "clean": "rm -rf .next out",
+    "start": "npx serve@latest ./out"
   },
   "eslintConfig": {
     "extends": [

@@ -91,11 +91,32 @@ const DashboardContent = ({
 	const generatePerformanceData = (isCumulative = false) => {
 		if (!data?.submissions || !data?.votes || !data?.competitors || !data?.rounds) return [];
 
-		// Calculate vote totals for each submission
+		// Build voter participation map for no-vote penalty
+		const voterParticipation = {};
+		data.votes.forEach(vote => {
+			const voterId = vote['Voter ID'];
+			const roundId = vote['Round ID'];
+			if (!voterParticipation[voterId]) {
+				voterParticipation[voterId] = new Set();
+			}
+			voterParticipation[voterId].add(roundId);
+		});
+
+		// Map each submission (by URI + Round ID) to its submitter
+		const submissionToSubmitter = {};
+		data.submissions.forEach(submission => {
+			const key = `${submission['Spotify URI']}|${submission['Round ID']}`;
+			submissionToSubmitter[key] = submission['Submitter ID'];
+		});
+
+		// Calculate vote totals per submission, applying no-vote penalty
 		const submissionVotes = {};
 		data.votes.forEach(vote => {
-			const uri = vote['Spotify URI'];
-			submissionVotes[uri] = (submissionVotes[uri] || 0) + parseInt(vote['Points Assigned'] || 0);
+			const key = `${vote['Spotify URI']}|${vote['Round ID']}`;
+			const submitterId = submissionToSubmitter[key];
+			if (submitterId && voterParticipation[submitterId]?.has(vote['Round ID'])) {
+				submissionVotes[key] = (submissionVotes[key] || 0) + parseInt(vote['Points Assigned'] || 0);
+			}
 		});
 
 		// Create a map of round IDs to round numbers for proper ordering
@@ -110,7 +131,8 @@ const DashboardContent = ({
 			const competitorId = submission['Submitter ID'];
 			const roundId = submission['Round ID'];
 			const roundNumber = roundOrder[roundId];
-			const votes = submissionVotes[submission['Spotify URI']] || 0;
+			const key = `${submission['Spotify URI']}|${roundId}`;
+			const votes = submissionVotes[key] || 0;
 
 			if (!competitorRoundData[competitorId]) {
 				competitorRoundData[competitorId] = {};
@@ -1921,12 +1943,12 @@ ${roundsDescription}`;
 									tiedWinners={superlatives?.similarity?.mostSimilar?.tiedWinners}
 									tiedDetails={superlatives?.similarity?.mostSimilar?.isTied ?
 										superlatives?.similarity?.mostSimilar?.tiedPairs?.map(pair =>
-											`Similarity Score: ${pair.score}
+											`Similarity Score: ${pair.score ?? (pair.similarity?.toFixed ? pair.similarity.toFixed(2) : pair.similarity) ?? 'N/A'}
 								Average Difference: ${pair.avgDiff ?? 'N/A'} votes
 								Common Songs Voted On: ${pair.votesCompared ?? 'N/A'}`
 										) ||
 										superlatives?.similarity?.mostSimilar?.tiedWinners?.map(
-											name => `Similarity Score: ${superlatives?.similarity?.mostSimilar?.score}`
+											name => `Similarity Score: ${superlatives?.similarity?.mostSimilar?.score ?? 'N/A'}`
 										) : null
 									}
 									calculationKey="mostSimilar"
@@ -1953,12 +1975,12 @@ ${roundsDescription}`;
 									tiedWinners={superlatives?.similarity?.leastSimilar?.tiedWinners}
 									tiedDetails={superlatives?.similarity?.leastSimilar?.isTied ?
 										superlatives?.similarity?.leastSimilar?.tiedPairs?.map(pair =>
-											`Similarity Score: ${pair.score}
+											`Similarity Score: ${pair.score ?? (pair.similarity?.toFixed ? pair.similarity.toFixed(2) : pair.similarity) ?? 'N/A'}
 								Average Difference: ${pair.avgDiff ?? 'N/A'} votes
 								Common Songs Voted On: ${pair.votesCompared ?? 'N/A'}`
 										) ||
 										superlatives?.similarity?.leastSimilar?.tiedWinners?.map(
-											name => `Similarity Score: ${superlatives?.similarity?.leastSimilar?.score}`
+											name => `Similarity Score: ${superlatives?.similarity?.leastSimilar?.score ?? 'N/A'}`
 										) : null
 									}
 									calculationKey="leastSimilar"
