@@ -1,14 +1,20 @@
-import React, { useState } from 'react';
-import { Container, Typography, Grid, Box, Tabs, Tab, useMediaQuery, useTheme, Card, CardContent, Paper, Modal, IconButton, Accordion, AccordionSummary, AccordionDetails, ToggleButtonGroup, ToggleButton, Collapse, Button } from '@mui/material';
+import React, { useEffect, useMemo, useState } from 'react';
+import { Container, Typography, Grid, Box, Tabs, Tab, useMediaQuery, useTheme, Card, CardContent, Paper, Modal, IconButton, Stack, FormControlLabel, Switch, Select, MenuItem, TextField, Autocomplete } from '@mui/material';
 import { Close } from '@mui/icons-material';
-import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
-import CloseFullscreenIcon from '@mui/icons-material/CloseFullscreen';
-import { ScatterChart, Scatter, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, LineChart, Line, ReferenceLine, LabelList } from 'recharts';
+import { ScatterChart, Scatter, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, LineChart, Line, Customized } from 'recharts';
 
 // Individual award components
 import SuperlativeCard from './SuperlativeCard';
 import VotingGraph from './VotingGraph';
 import IndividualPerformance from './IndividualPerformance';
+
+const DASHBOARD_COLOR_PALETTE = [
+	'#FF0000', '#00FF00', '#0000FF', '#FFFF00', '#FF00FF', '#00FFFF',
+	'#800000', '#008000', '#000080', '#808000', '#800080', '#008080',
+	'#FFA500', '#FFC0CB', '#A52A2A', '#808080', '#000000', '#DC143C',
+	'#FFD700', '#4B0082', '#FF6347', '#32CD32', '#87CEEB', '#DDA0DD',
+	'#F0E68C'
+];
 
 // Tab Panel component
 function TabPanel(props) {
@@ -39,6 +45,164 @@ function a11yProps(index) {
 	};
 }
 
+// End labels component rendered on top of LineChart with collision relaxation and leader curves
+const PerformanceEndLabels = ({
+	formattedGraphicalItems = [],
+	offset,
+	hoveredSeries,
+	highlightName,
+	setHoveredSeries,
+	setHighlightName,
+	isMediumScreen
+}) => {
+	// Extract end point for each visible line
+	const rawItems = [];
+	formattedGraphicalItems.forEach(item => {
+		const name = item?.item?.props?.dataKey || item?.props?.dataKey;
+		const color = item?.item?.props?.stroke || item?.props?.stroke || '#888';
+		const points = item?.props?.points || [];
+		let lastPt = null;
+		for (let i = points.length - 1; i >= 0; i--) {
+			const p = points[i];
+			if (p && p.x != null && p.y != null && p.value != null && !isNaN(p.x) && !isNaN(p.y)) {
+				lastPt = p;
+				break;
+			}
+		}
+		if (name && lastPt) {
+			rawItems.push({
+				name,
+				color,
+				origX: lastPt.x,
+				origY: lastPt.y,
+				value: lastPt.value
+			});
+		}
+	});
+
+	if (rawItems.length === 0) return null;
+
+	const minY = (offset?.top ?? 20) + 6;
+	const maxY = (offset?.top ?? 20) + (offset?.height ?? 300) - 6;
+	const minGap = isMediumScreen ? 13 : 15;
+
+	// Sort ascending by origY (top to bottom on screen), tie-break by name
+	const items = [...rawItems]
+		.map(it => ({ ...it, targetY: it.origY }))
+		.sort((a, b) => a.origY - b.origY || a.name.localeCompare(b.name));
+
+	const n = items.length;
+	if (n > 1) {
+		const availableSpace = Math.max(maxY - minY, 50);
+		const gap = Math.min(minGap, availableSpace / (n - 1));
+
+		// Iterative relaxation to resolve overlaps while preserving proximity to origY
+		for (let iter = 0; iter < 40; iter++) {
+			for (let i = 0; i < n - 1; i++) {
+				const dist = items[i + 1].targetY - items[i].targetY;
+				if (dist < gap) {
+					const overlap = gap - dist;
+					items[i].targetY -= overlap * 0.5;
+					items[i + 1].targetY += overlap * 0.5;
+				}
+			}
+
+			// Gentle anchor pull to prevent unnecessary drift for uncrowded lines
+			for (let i = 0; i < n; i++) {
+				items[i].targetY += (items[i].origY - items[i].targetY) * 0.08;
+			}
+
+			// Soft boundary constraint
+			if (items[0].targetY < minY) items[0].targetY = minY;
+			if (items[n - 1].targetY > maxY) items[n - 1].targetY = maxY;
+		}
+
+		// Strict non-overlap enforcement: forward pass
+		for (let i = 0; i < n - 1; i++) {
+			if (items[i + 1].targetY < items[i].targetY + gap) {
+				items[i + 1].targetY = items[i].targetY + gap;
+			}
+		}
+
+		// Backward pass if bottom boundary exceeded
+		if (items[n - 1].targetY > maxY) {
+			items[n - 1].targetY = maxY;
+			for (let i = n - 2; i >= 0; i--) {
+				if (items[i].targetY > items[i + 1].targetY - gap) {
+					items[i].targetY = items[i + 1].targetY - gap;
+				}
+			}
+		}
+
+		// Final check on top boundary
+		if (items[0].targetY < minY) {
+			items[0].targetY = minY;
+			for (let i = 0; i < n - 1; i++) {
+				if (items[i + 1].targetY < items[i].targetY + gap) {
+					items[i + 1].targetY = items[i].targetY + gap;
+				}
+			}
+		}
+	} else if (n === 1) {
+		items[0].targetY = Math.max(minY, Math.min(maxY, items[0].targetY));
+	}
+
+	return (
+		<g className="recharts-performance-end-labels">
+			{items.map(item => {
+				const isHighlighted = (hoveredSeries === item.name) || (highlightName === item.name);
+				const dimmed = !isHighlighted && Boolean(hoveredSeries || highlightName);
+
+				const p1x = item.origX + 2;
+				const p1y = item.origY;
+				const p2x = item.origX + 14;
+				const p2y = item.targetY;
+				const cx = (p1x + p2x) / 2;
+				const pathData = `M ${p1x},${p1y} C ${cx},${p1y} ${cx},${p2y} ${p2x},${p2y}`;
+
+				return (
+					<g
+						key={`end-label-${item.name}`}
+						style={{ cursor: 'pointer' }}
+						onMouseEnter={() => setHoveredSeries && setHoveredSeries(item.name)}
+						onMouseLeave={() => setHoveredSeries && setHoveredSeries(prev => prev === item.name ? null : prev)}
+						onClick={() => setHighlightName && setHighlightName(prev => prev === item.name ? '' : item.name)}
+					>
+						{/* Connecting leader curve from line endpoint to label */}
+						<path
+							d={pathData}
+							fill="none"
+							stroke={item.color}
+							strokeWidth={isHighlighted ? 2.5 : 1.2}
+							strokeOpacity={dimmed ? 0.2 : 0.85}
+							style={{ transition: 'stroke-width 0.15s ease, stroke-opacity 0.15s ease' }}
+						/>
+						{/* Label text */}
+						<text
+							x={item.origX + 18}
+							y={item.targetY}
+							fontSize={isHighlighted ? (isMediumScreen ? 12 : 13) : (isMediumScreen ? 11 : 12)}
+							fontWeight={isHighlighted ? 'bold' : '500'}
+							fill={item.color}
+							stroke="#fff"
+							strokeWidth={isHighlighted ? 4 : 3}
+							paintOrder="stroke"
+							dominantBaseline="central"
+							opacity={dimmed ? 0.25 : 1}
+							style={{
+								transition: 'opacity 0.15s ease, font-size 0.15s ease',
+								userSelect: 'none'
+							}}
+						>
+							{item.name}
+						</text>
+					</g>
+				);
+			})}
+		</g>
+	);
+};
+
 const DashboardContent = ({
 	data,
 	superlatives,
@@ -57,37 +221,16 @@ const DashboardContent = ({
 	const [selectedRound, setSelectedRound] = useState(null);
 	const [modalOpen, setModalOpen] = useState(false);
 
-	// Fullscreen chart modal state
-	const [fullscreenOpen, setFullscreenOpen] = useState(false);
-	const [fullscreenChart, setFullscreenChart] = useState(null); // 'scatter' | 'lineRound' | 'lineCumulative'
-
 	// State for chart tabs
 	const [chartTabValue, setChartTabValue] = useState(0);
 
-	// Focus mode for line charts (Top 5 vs All)
-	const [lineFocusMode, setLineFocusMode] = useState('all');
-	// Focused competitor highlight
-	const [focusedCompetitorName, setFocusedCompetitorName] = useState(null);
-	// Collapsible descriptions
-	const [showMoreScatter, setShowMoreScatter] = useState(false);
-	const [showMorePerformance, setShowMorePerformance] = useState(false);
-
 	// Interaction state for performance charts
+	const [hoveredSeries, setHoveredSeries] = useState(null);
+	const [onlyTopN, setOnlyTopN] = useState(false);
+	const [topN, setTopN] = useState(5);
+	const [highlightName, setHighlightName] = useState('');
+	const [timingHighlight, setTimingHighlight] = useState('');
 
-	// XS-only filter for scatter
-	const [showTop20, setShowTop20] = useState(false);
-
-	// Deterministic jitter helper to reduce point stacking on popularity axis
-	const getDeterministicJitter = (key, scale = 1) => {
-		if (!key) return 0;
-		let hash = 0;
-		for (let i = 0; i < key.length; i++) {
-			hash = ((hash << 5) - hash) + key.charCodeAt(i);
-			hash |= 0;
-		}
-		const normalized = (Math.abs(hash) % 1000) / 1000; // 0..1
-		return (normalized * 2 - 1) * scale; // -scale..+scale
-	};
 	const handleRoundClick = (roundData, roundNumber) => {
 		setSelectedRound({ roundData, roundNumber });
 		setModalOpen(true);
@@ -98,26 +241,9 @@ const DashboardContent = ({
 		setSelectedRound(null);
 	};
 
-
-
-	const closeFullscreen = () => {
-		setFullscreenOpen(false);
-		setFullscreenChart(null);
-	};
-
 	const handleChartTabChange = (event, newValue) => {
 		setChartTabValue(newValue);
 	};
-
-	const handleLineFocusChange = (event, newValue) => {
-		if (newValue) setLineFocusMode(newValue);
-	};
-
-	const handleFocusToggle = (name) => {
-		setFocusedCompetitorName(prev => (prev === name ? null : name));
-	};
-
-	const clearFocus = () => setFocusedCompetitorName(null);
 
 	// Function to generate performance data (round-by-round or cumulative)
 	const generatePerformanceData = (isCumulative = false) => {
@@ -218,28 +344,136 @@ const DashboardContent = ({
 		return chartData;
 	};
 
-	// Helper: get filtered competitor list (all competitors shown; Top N control removed)
+	// Helper: get filtered competitor list based on Top N and highlight selection
 	const getFilteredCompetitors = (chartData) => {
 		const names = (data?.competitors || [])
 			.filter(c => c && c.Name)
 			.map(c => c.Name);
-		return new Set(names);
+
+		if (!onlyTopN) return new Set(names);
+
+		// Compute last available value per competitor
+		const lastVals = names.map(name => {
+			let lastVal = null;
+			for (let i = chartData.length - 1; i >= 0; i--) {
+				const v = chartData[i]?.[name];
+				if (v !== null && v !== undefined) { lastVal = v; break; }
+			}
+			return { name, value: lastVal ?? -Infinity };
+		});
+
+		const sorted = lastVals.sort((a, b) => (b.value - a.value));
+		const cutoff = Math.max(0, topN);
+		const topList = new Set(sorted.slice(0, cutoff).map(x => x.name));
+		// Always include highlighted selection if present
+		if (highlightName) topList.add(highlightName);
+		return topList;
 	};
 
-	// Compute Top N competitors by cumulative total (for focus mode)
-	const getTopNCompetitorNames = (n = 5) => {
-		const cumulativeData = generatePerformanceData(true);
-		if (!cumulativeData?.length) return [];
-		const lastRound = cumulativeData[cumulativeData.length - 1];
-		const entries = Object.entries(lastRound)
-			.filter(([key]) => key !== 'round' && typeof lastRound[key] === 'number');
-		return entries
-			.sort((a, b) => b[1] - a[1])
-			.slice(0, n)
-			.map(([name]) => name);
+
+	const formatTimingDetail = (entryLabel, entry) => {
+		if (!entry || !entry.score) {
+			return 'Not enough submissions to calculate this metric yet.';
+		}
+
+		const timingPercent = (entry.avgPosition !== undefined && entry.avgPosition !== null) ? parseInt(entry.avgPosition) : null;
+		let timingDescription = 'N/A';
+		if (timingPercent !== null) {
+			timingDescription = `Around the ${timingPercent}% mark of round submissions, on average`;
+		}
+
+		const performancePercent = (entry.avgPerformance !== undefined && entry.avgPerformance !== null) ? parseInt(entry.avgPerformance) : null;
+		const performanceDescription = performancePercent !== null
+			? `Averaged ${performancePercent}% performance across all songs`
+			: 'N/A';
+
+		const roundsDescription = entry.roundCount
+			? `Based on ${entry.roundCount} submission${entry.roundCount !== 1 ? 's' : ''}`
+			: 'N/A';
+
+		return `${entryLabel} Submitter Score: ${entry.score}
+
+Submission timing: ${timingDescription}
+Song performance: ${performanceDescription}
+${roundsDescription}`;
 	};
 
-	//
+	const timingColorMap = useMemo(() => {
+		const map = new Map();
+		(data?.competitors || []).forEach((competitor, index) => {
+			if (competitor?.ID) {
+				map.set(competitor.ID, DASHBOARD_COLOR_PALETTE[index % DASHBOARD_COLOR_PALETTE.length]);
+			}
+		});
+		return map;
+	}, [data?.competitors]);
+
+	const submissionTimingData = useMemo(() => {
+		if (!superlatives?.submissionTimingData || !data?.competitors) return [];
+		const competitorMap = new Map(
+			data.competitors
+				.filter(c => c && c.ID)
+				.map(c => [c.ID, c.Name])
+		);
+
+		return superlatives.submissionTimingData
+			.map(entry => {
+				const competitorName = competitorMap.get(entry.submitterId);
+				if (!competitorName) return null;
+
+				const submissionPercent = entry.submissionPosition !== undefined
+					? Number((entry.submissionPosition * 100).toFixed(1))
+					: null;
+				const performancePercent = entry.normalizedPerformance !== undefined
+					? Number((entry.normalizedPerformance * 100).toFixed(1))
+					: null;
+
+				return {
+					...entry,
+					competitorName,
+					submissionPercent,
+					performancePercent,
+					color: timingColorMap.get(entry.submitterId) || '#7a7a7a'
+				};
+			})
+			.filter(Boolean);
+	}, [superlatives?.submissionTimingData, data?.competitors, timingColorMap]);
+
+	const timingLegendCompetitors = useMemo(() => {
+		const seen = new Map();
+		submissionTimingData.forEach(item => {
+			if (!seen.has(item.submitterId)) {
+				seen.set(item.submitterId, {
+					id: item.submitterId,
+					name: item.competitorName,
+					color: item.color
+				});
+			}
+		});
+		return Array.from(seen.values());
+	}, [submissionTimingData]);
+
+	const timingCompetitorNames = useMemo(() => {
+		return timingLegendCompetitors
+			.map(item => item.name)
+			.filter(Boolean)
+			.sort((a, b) => a.localeCompare(b));
+	}, [timingLegendCompetitors]);
+
+	useEffect(() => {
+		if (timingHighlight && !timingCompetitorNames.includes(timingHighlight)) {
+			setTimingHighlight('');
+		}
+	}, [timingHighlight, timingCompetitorNames]);
+
+	const filteredTimingData = useMemo(() => {
+		if (!timingHighlight) return submissionTimingData;
+		return submissionTimingData.filter(item => item.competitorName === timingHighlight);
+	}, [submissionTimingData, timingHighlight]);
+
+	const hasTimingData = submissionTimingData.length > 0;
+	const earlyBirdData = superlatives?.earlyBirdLateBloomer?.earlyBird;
+	const lastMinuteData = superlatives?.earlyBirdLateBloomer?.lastMinute;
 
 	return (
 		<Container maxWidth="xl" sx={{ mt: 4, mb: 4, px: { xs: 2, sm: 3, md: 4 } }}>
@@ -270,8 +504,7 @@ const DashboardContent = ({
 					justifyContent: 'center',
 					mb: 6,
 					width: '100%',
-					overflowX: 'auto',
-					position: 'relative'
+					overflowX: 'auto'
 				}}>
 					<VotingGraph
 						competitors={data.competitors}
@@ -284,237 +517,217 @@ const DashboardContent = ({
 				<Box sx={{ mb: 6, width: '100%' }}>
 					<Card>
 						<CardContent>
-							<Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-								<Typography variant="h5" component="h2" gutterBottom sx={{ color: theme.palette.primary.main, fontWeight: 'bold', mb: 1 }}>
-									🎵 League Songs: Performance vs Spotify Popularity
-								</Typography>
-							</Box>
-							<Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-								{isSmallScreen ? (showMoreScatter ? 'How popular was the music you submitted? Each point represents a song colored by its submitter.' : 'How popular was the music you submitted?') : 'How popular was the music you submitted? Each point represents a song colored by its submitter.'}
+							<Typography variant="h5" component="h2" gutterBottom sx={{ color: theme.palette.primary.main, fontWeight: 'bold' }}>
+								🎵 League Songs: Performance vs Spotify Popularity
 							</Typography>
-							{isSmallScreen && (
-								<Button size="small" onClick={() => setShowMoreScatter(v => !v)} sx={{ mb: 2 }}>
-									{showMoreScatter ? 'Less' : 'More'}
-								</Button>
-							)}
-							<Box sx={{ display: { xs: 'flex', sm: 'none' }, gap: 1, mb: 2 }}>
-								<ToggleButton size="small" value="top20" selected={showTop20} onChange={() => setShowTop20(v => !v)}>
-									Top 20 by votes
-								</ToggleButton>
-							</Box>
-							<Box sx={{ overflowX: 'auto', pb: 1 }}>
-								<Box sx={{ width: '100%', minWidth: { xs: 720, sm: '100%' }, height: { xs: 420, sm: 450, md: 500 }, minHeight: { xs: 360, sm: 400 } }}>
-									<ResponsiveContainer width="100%" height="100%">
-										<ScatterChart
-											margin={{
-												top: 20,
-												right: isMediumScreen ? 20 : 80,
-												bottom: isMediumScreen ? 40 : 60,
-												left: isMediumScreen ? 10 : 20,
+							<Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+								How popular was the music you submitted? Each point represents a song colored by its submitter.
+							</Typography>
+							<Box sx={{
+								width: '100%',
+								height: { xs: 400, sm: 450, md: 500 },
+								minHeight: { xs: 350, sm: 400 }
+							}}>
+								<ResponsiveContainer width="100%" height="100%">
+									<ScatterChart
+										margin={{
+											top: 20,
+											right: isMediumScreen ? 20 : 80,
+											bottom: isMediumScreen ? 40 : 60,
+											left: isMediumScreen ? 10 : 20,
+										}}
+									>
+										<CartesianGrid
+											strokeDasharray="3 3"
+											stroke={theme.palette.divider}
+											opacity={0.3}
+										/>
+										<XAxis
+											type="number"
+											dataKey="x"
+											name="Spotify Popularity"
+											domain={[0, 100]}
+											tick={{ fill: theme.palette.text.secondary, fontSize: isMediumScreen ? 10 : 12 }}
+											label={{
+												value: isMediumScreen ? 'Spotify Popularity' : 'Spotify Popularity (0-100)',
+												position: 'bottom',
+												offset: isMediumScreen ? -5 : -10,
+												style: {
+													textAnchor: 'middle',
+													fill: theme.palette.text.primary,
+													fontSize: isMediumScreen ? '12px' : '14px',
+													fontWeight: 'bold'
+												}
 											}}
-										>
-											<CartesianGrid strokeDasharray="3 3" stroke={theme.palette.divider} opacity={isSmallScreen ? 0.2 : 0.3} />
-											<XAxis
-												type="number"
-												dataKey="x"
-												name="Spotify Popularity"
-												domain={[0, 100]}
-												tick={{ fill: theme.palette.text.secondary, fontSize: isMediumScreen ? 10 : 12 }}
-												label={{
-													value: isMediumScreen ? 'Spotify Popularity' : 'Spotify Popularity (0-100)',
-													position: 'bottom',
-													offset: isMediumScreen ? -5 : -10,
-													style: { textAnchor: 'middle', fill: theme.palette.text.primary, fontSize: isMediumScreen ? '12px' : '14px', fontWeight: 'bold' }
-												}}
-											/>
-											<YAxis
-												type="number"
-												dataKey="y"
-												name="Relative Performance"
-												domain={[0, 1]}
-												tick={{ fill: theme.palette.text.secondary, fontSize: isMediumScreen ? 10 : 12 }}
-												tickFormatter={(value) => `${(value * 100).toFixed(0)}%`}
-												label={{
-													value: isMediumScreen ? 'Performance' : 'Relative Performance (0-100%)',
-													angle: -90,
-													position: 'insideLeft',
-													style: { textAnchor: 'middle', fill: theme.palette.text.primary, fontSize: isMediumScreen ? '12px' : '14px', fontWeight: 'bold' }
-												}}
-											/>
-											<Tooltip content={({ active, payload }) => {
-												if (active && payload && payload.length) {
-													const data = payload[0].payload;
-													return (
-														<Paper sx={{
-															p: { xs: 1.5, sm: 2 },
-															backgroundColor: 'white',
-															border: `2px solid ${theme.palette.primary.main}`,
-															maxWidth: { xs: '250px', sm: '300px' },
+										/>
+										<YAxis
+											type="number"
+											dataKey="y"
+											name="Relative Performance"
+											domain={[0, 1]}
+											tick={{ fill: theme.palette.text.secondary, fontSize: isMediumScreen ? 10 : 12 }}
+											tickFormatter={(value) => `${(value * 100).toFixed(0)}%`}
+											label={{
+												value: isMediumScreen ? 'Performance' : 'Relative Performance (0-100%)',
+												angle: -90,
+												position: 'insideLeft',
+												style: {
+													textAnchor: 'middle',
+													fill: theme.palette.text.primary,
+													fontSize: isMediumScreen ? '12px' : '14px',
+													fontWeight: 'bold'
+												}
+											}}
+										/>
+										<Tooltip content={({ active, payload }) => {
+											if (active && payload && payload.length) {
+												const data = payload[0].payload;
+												return (
+													<Paper sx={{
+														p: { xs: 1.5, sm: 2 },
+														backgroundColor: 'white',
+														border: `2px solid ${theme.palette.primary.main}`,
+														maxWidth: { xs: '250px', sm: '300px' },
+														fontSize: { xs: '0.875rem', sm: '1rem' }
+													}}>
+														<Typography variant="subtitle2" sx={{
+															fontWeight: 'bold',
+															color: theme.palette.primary.main,
 															fontSize: { xs: '0.875rem', sm: '1rem' }
 														}}>
-															<Typography variant="subtitle2" sx={{
-																fontWeight: 'bold',
-																color: theme.palette.primary.main,
-																fontSize: { xs: '0.875rem', sm: '1rem' }
-															}}>
-																{data.title}
-															</Typography>
-															<Typography variant="body2" color="text.secondary" sx={{
-																fontSize: { xs: '0.75rem', sm: '0.875rem' }
-															}}>
-																by {data.artist}
-															</Typography>
-															<Typography variant="body2" sx={{
-																mt: 1,
-																fontSize: { xs: '0.75rem', sm: '0.875rem' }
-															}}>
-																Submitted by: {data.submitter}
-															</Typography>
-															<Typography variant="body2" sx={{
-																fontSize: { xs: '0.75rem', sm: '0.875rem' }
-															}}>
-																Round: {data.roundName}
-															</Typography>
-															<Typography variant="body2" sx={{
-																fontSize: { xs: '0.75rem', sm: '0.875rem' }
-															}}>
-																Votes: {data.votes}
-															</Typography>
-															<Typography variant="body2" sx={{
-																fontSize: { xs: '0.75rem', sm: '0.875rem' }
-															}}>
-																Spotify Popularity: {data.x}
-															</Typography>
-															<Typography variant="body2" sx={{
-																fontSize: { xs: '0.75rem', sm: '0.875rem' }
-															}}>
-																Relative Performance: {(data.y * 100).toFixed(1)}%
-															</Typography>
-														</Paper>
-													);
-												}
-												return null;
-											}} />
-											<Scatter
-												data={(() => {
-													// Calculate scatter plot data for all songs
-													if (!data?.submissions || !data?.votes || !data?.competitors || !data?.rounds) return [];
+															{data.title}
+														</Typography>
+														<Typography variant="body2" color="text.secondary" sx={{
+															fontSize: { xs: '0.75rem', sm: '0.875rem' }
+														}}>
+															by {data.artist}
+														</Typography>
+														<Typography variant="body2" sx={{
+															mt: 1,
+															fontSize: { xs: '0.75rem', sm: '0.875rem' }
+														}}>
+															Submitted by: {data.submitter}
+														</Typography>
+														<Typography variant="body2" sx={{
+															fontSize: { xs: '0.75rem', sm: '0.875rem' }
+														}}>
+															Round: {data.roundName}
+														</Typography>
+														<Typography variant="body2" sx={{
+															fontSize: { xs: '0.75rem', sm: '0.875rem' }
+														}}>
+															Votes: {data.votes}
+														</Typography>
+														<Typography variant="body2" sx={{
+															fontSize: { xs: '0.75rem', sm: '0.875rem' }
+														}}>
+															Spotify Popularity: {data.x}
+														</Typography>
+														<Typography variant="body2" sx={{
+															fontSize: { xs: '0.75rem', sm: '0.875rem' }
+														}}>
+															Relative Performance: {(data.y * 100).toFixed(1)}%
+														</Typography>
+													</Paper>
+												);
+											}
+											return null;
+										}} />
+										<Scatter
+											data={(() => {
+												// Calculate scatter plot data for all songs
+												if (!data?.submissions || !data?.votes || !data?.competitors || !data?.rounds) return [];
 
-													// Calculate vote totals for each submission
-													const submissionVotes = {};
-													data.votes.forEach(vote => {
-														const uri = vote['Spotify URI'];
-														submissionVotes[uri] = (submissionVotes[uri] || 0) + parseInt(vote['Points Assigned'] || 0);
-													});
-
-													// Get all vote totals for normalization
-													const allVoteTotals = Object.values(submissionVotes);
-													const maxVotes = Math.max(...allVoteTotals);
-													const minVotes = Math.min(...allVoteTotals);
-													const voteRange = maxVotes - minVotes;
-
-													// Build scatter dataset with jitter and optional filters
-													let points = data.submissions
-														.filter(sub => sub.popularity !== null && sub.popularity !== undefined)
-														.map(sub => {
-															const votes = submissionVotes[sub['Spotify URI']] || 0;
-															const relativePerformance = voteRange > 0 ? (votes - minVotes) / voteRange : 0.5;
-															const submitter = data.competitors.find(comp => comp.ID === sub['Submitter ID']);
-															const round = data.rounds.find(r => r.ID === sub['Round ID']);
-															const jitter = getDeterministicJitter(sub['Spotify URI'], 1.2);
-															const x = Math.max(0, Math.min(100, (sub.popularity || 0) + jitter));
-															return {
-																x,
-																y: relativePerformance,
-																title: sub.Title,
-																artist: sub['Artist(s)'],
-																submitter: submitter?.Name || 'Unknown',
-																roundName: round?.Name || 'Unknown',
-																votes: votes,
-																submitterId: sub['Submitter ID']
-															};
-														});
-
-													if (showTop20) {
-														points = points.sort((a, b) => b.votes - a.votes).slice(0, 20);
-													}
-
-													return points;
-												})()}
-												fill={theme.palette.primary.main}
-											>
-												{(() => {
-													// Calculate scatter plot data for all songs (same as above)
-													if (!data?.submissions || !data?.votes || !data?.competitors || !data?.rounds) return [];
-
-													const submissionVotes = {};
-													data.votes.forEach(vote => {
-														const uri = vote['Spotify URI'];
-														submissionVotes[uri] = (submissionVotes[uri] || 0) + parseInt(vote['Points Assigned'] || 0);
-													});
-
-													const allVoteTotals = Object.values(submissionVotes);
-													const maxVotes = Math.max(...allVoteTotals);
-													const minVotes = Math.min(...allVoteTotals);
-													const voteRange = maxVotes - minVotes;
-
-													const scatterData = data.submissions
-														.filter(sub => sub.popularity !== null && sub.popularity !== undefined)
-														.map(sub => {
-															const votes = submissionVotes[sub['Spotify URI']] || 0;
-															const relativePerformance = voteRange > 0
-																? (votes - minVotes) / voteRange
-																: 0.5;
-
-															return {
-																x: sub.popularity,
-																y: relativePerformance,
-																submitterId: sub['Submitter ID']
-															};
-														});
-
-													// Create color mapping for each competitor
-													const colors = [
-														'#FF0000', '#00FF00', '#0000FF', '#FFFF00', '#FF00FF', '#00FFFF', '#800000', '#008000', '#000080', '#808000', '#800080', '#008080', '#FFA500', '#FFC0CB', '#A52A2A', '#808080', '#000000', '#DC143C', '#FFD700', '#4B0082', '#FF6347', '#32CD32', '#87CEEB', '#DDA0DD', '#F0E68C'
-													];
-
-													return scatterData.map((entry, index) => {
-														const competitorIndex = data.competitors.findIndex(comp => comp.ID === entry.submitterId);
-														const colorIndex = competitorIndex >= 0 ? competitorIndex % colors.length : 0;
-														return (
-															<Cell key={`cell-${index}`} fill={colors[colorIndex]} fillOpacity={0.7} stroke={colors[colorIndex]} strokeWidth={isSmallScreen ? 1.2 : 1.8} r={isSmallScreen ? 4 : 5} />
-														);
-													});
-												})()}
-											</Scatter>
-											{(() => {
-												if (!data?.submissions || !data?.votes) return null;
+												// Calculate vote totals for each submission
 												const submissionVotes = {};
-												data.votes.forEach(v => { const uri = v['Spotify URI']; submissionVotes[uri] = (submissionVotes[uri] || 0) + parseInt(v['Points Assigned'] || 0); });
-												const totals = Object.values(submissionVotes);
-												const max = Math.max(...totals); const min = Math.min(...totals); const range = max - min;
-												let pts = data.submissions.filter(s => s.popularity != null).map(s => {
-													const votes = submissionVotes[s['Spotify URI']] || 0;
-													const y = range > 0 ? (votes - min) / range : 0.5;
-													const jitter = getDeterministicJitter(s['Spotify URI'], 1.2);
-													const x = Math.max(0, Math.min(100, (s.popularity || 0) + jitter));
-													return { x, y, votes };
+												data.votes.forEach(vote => {
+													const uri = vote['Spotify URI'];
+													submissionVotes[uri] = (submissionVotes[uri] || 0) + parseInt(vote['Points Assigned'] || 0);
 												});
-												if (showTop20) pts = pts.sort((a, b) => b.votes - a.votes).slice(0, 20);
-												if (pts.length < 2) return null;
-												let n = pts.length, sumX = 0, sumY = 0, sumXY = 0, sumXX = 0, minX = 100, maxX = 0;
-												pts.forEach(p => { sumX += p.x; sumY += p.y; sumXY += p.x * p.y; sumXX += p.x * p.x; minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x); });
-												const denom = (n * sumXX - sumX * sumX);
-												if (!denom) return null;
-												const slope = (n * sumXY - sumX * sumY) / denom;
-												const intercept = (sumY - slope * sumX) / n;
-												const y0 = Math.max(0, Math.min(1, slope * minX + intercept));
-												const y1 = Math.max(0, Math.min(1, slope * maxX + intercept));
-												return <ReferenceLine key="scatter-trend" segment={[{ x: minX, y: y0 }, { x: maxX, y: y1 }]} stroke={theme.palette.text.secondary} strokeDasharray="6 6" />;
+
+												// Get all vote totals for normalization
+												const allVoteTotals = Object.values(submissionVotes);
+												const maxVotes = Math.max(...allVoteTotals);
+												const minVotes = Math.min(...allVoteTotals);
+												const voteRange = maxVotes - minVotes;
+
+												// Process submissions into scatter plot data
+												return data.submissions
+													.filter(sub => sub.popularity !== null && sub.popularity !== undefined)
+													.map(sub => {
+														const votes = submissionVotes[sub['Spotify URI']] || 0;
+														const relativePerformance = voteRange > 0
+															? (votes - minVotes) / voteRange
+															: 0.5;
+
+														const submitter = data.competitors.find(comp => comp.ID === sub['Submitter ID']);
+														const round = data.rounds.find(r => r.ID === sub['Round ID']);
+
+														return {
+															x: sub.popularity,
+															y: relativePerformance,
+															title: sub.Title,
+															artist: sub['Artist(s)'],
+															submitter: submitter?.Name || 'Unknown',
+															roundName: round?.Name || 'Unknown',
+															votes: votes
+														};
+													});
 											})()}
-										</ScatterChart>
-									</ResponsiveContainer>
-								</Box>
+											fill={theme.palette.primary.main}
+										>
+											{(() => {
+												// Calculate scatter plot data for all songs (same as above)
+												if (!data?.submissions || !data?.votes || !data?.competitors || !data?.rounds) return [];
+
+												const submissionVotes = {};
+												data.votes.forEach(vote => {
+													const uri = vote['Spotify URI'];
+													submissionVotes[uri] = (submissionVotes[uri] || 0) + parseInt(vote['Points Assigned'] || 0);
+												});
+
+												const allVoteTotals = Object.values(submissionVotes);
+												const maxVotes = Math.max(...allVoteTotals);
+												const minVotes = Math.min(...allVoteTotals);
+												const voteRange = maxVotes - minVotes;
+
+												const scatterData = data.submissions
+													.filter(sub => sub.popularity !== null && sub.popularity !== undefined)
+													.map(sub => {
+														const votes = submissionVotes[sub['Spotify URI']] || 0;
+														const relativePerformance = voteRange > 0
+															? (votes - minVotes) / voteRange
+															: 0.5;
+
+														return {
+															x: sub.popularity,
+															y: relativePerformance,
+															submitterId: sub['Submitter ID']
+														};
+													});
+
+												// Create color mapping for each competitor
+												const colors = DASHBOARD_COLOR_PALETTE;
+
+												return scatterData.map((entry, index) => {
+													const competitorIndex = data.competitors.findIndex(comp => comp.ID === entry.submitterId);
+													const colorIndex = competitorIndex >= 0 ? competitorIndex % colors.length : 0;
+
+													return (
+														<Cell
+															key={`cell-${index}`}
+															fill={colors[colorIndex]}
+															fillOpacity={0.7}
+															stroke={colors[colorIndex]}
+															strokeWidth={2}
+															r={isMediumScreen ? 6 : 8}
+														/>
+													);
+												});
+											})()}
+										</Scatter>
+									</ScatterChart>
+								</ResponsiveContainer>
 							</Box>
 							<Typography variant="body2" color="text.secondary" sx={{
 								mt: 0,
@@ -528,51 +741,58 @@ const DashboardContent = ({
 							</Typography>
 
 							{/* Color Legend */}
-							{isSmallScreen ? (
-								<Accordion sx={{ mt: 2 }}>
-									<AccordionSummary expandIcon={<ExpandMoreIcon />}>
-										<Typography variant="subtitle2" sx={{ fontWeight: 'bold' }}>Competitor Legend</Typography>
-									</AccordionSummary>
-									<AccordionDetails>
-										<Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1.5, justifyContent: 'center' }}>
-											{(() => {
-												const colors = ['#FF0000', '#00FF00', '#0000FF', '#FFFF00', '#FF00FF', '#00FFFF', '#800000', '#008000', '#000080', '#808000', '#800080', '#008080', '#FFA500', '#FFC0CB', '#A52A2A', '#808080', '#000000', '#DC143C', '#FFD700', '#4B0082', '#FF6347', '#32CD32', '#87CEEB', '#DDA0DD', '#F0E68C'];
-												return data?.competitors?.map((competitor, index) => {
-													if (!competitor || !competitor.Name) return null;
-													const colorIndex = index % colors.length;
-													return (
-														<Box key={competitor.ID || index} onClick={() => handleFocusToggle(competitor.Name)} sx={{ display: 'flex', alignItems: 'center', gap: 0.5, minWidth: 'fit-content', cursor: 'pointer', opacity: !focusedCompetitorName || focusedCompetitorName === competitor.Name ? 1 : 0.4 }}>
-															<Box sx={{ width: 12, height: 12, borderRadius: '50%', backgroundColor: colors[colorIndex], border: `2px solid ${colors[colorIndex]}`, flexShrink: 0 }} />
-															<Typography variant="caption" sx={{ fontSize: { xs: '0.7rem', sm: '0.75rem' }, whiteSpace: 'nowrap' }}>{competitor.Name}</Typography>
-														</Box>
-													);
-												}).filter(Boolean);
-											})()}
-										</Box>
-									</AccordionDetails>
-								</Accordion>
-							) : (
-								<Box sx={{ mt: 2, p: 2, bgcolor: 'grey.50', borderRadius: 1 }}>
-									<Typography variant="subtitle2" sx={{ fontWeight: 'bold', mb: 1 }}>
-										Competitor Legend:
-									</Typography>
-									<Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1.5, justifyContent: 'center' }}>
-										{(() => {
-											const colors = ['#FF0000', '#00FF00', '#0000FF', '#FFFF00', '#FF00FF', '#00FFFF', '#800000', '#008000', '#000080', '#808000', '#800080', '#008080', '#FFA500', '#FFC0CB', '#A52A2A', '#808080', '#000000', '#DC143C', '#FFD700', '#4B0082', '#FF6347', '#32CD32', '#87CEEB', '#DDA0DD', '#F0E68C'];
-											return data?.competitors?.map((competitor, index) => {
-												if (!competitor || !competitor.Name) return null;
-												const colorIndex = index % colors.length;
-												return (
-													<Box key={competitor.ID || index} onClick={() => handleFocusToggle(competitor.Name)} sx={{ display: 'flex', alignItems: 'center', gap: 0.5, minWidth: 'fit-content', cursor: 'pointer', opacity: !focusedCompetitorName || focusedCompetitorName === competitor.Name ? 1 : 0.4 }}>
-														<Box sx={{ width: 12, height: 12, borderRadius: '50%', backgroundColor: colors[colorIndex], border: `2px solid ${colors[colorIndex]}`, flexShrink: 0 }} />
-														<Typography variant="caption" sx={{ fontSize: { xs: '0.7rem', sm: '0.75rem' }, whiteSpace: 'nowrap' }}>{competitor.Name}</Typography>
-													</Box>
-												);
-											}).filter(Boolean);
-										})()}
-									</Box>
+							<Box sx={{ mt: 2, p: 2, bgcolor: 'grey.50', borderRadius: 1 }}>
+								<Typography variant="subtitle2" sx={{ fontWeight: 'bold', mb: 1 }}>
+									Competitor Legend:
+								</Typography>
+								<Box sx={{
+									display: 'flex',
+									flexWrap: 'wrap',
+									gap: 1.5,
+									justifyContent: 'center'
+								}}>
+									{(() => {
+										const colors = DASHBOARD_COLOR_PALETTE;
+
+										return data?.competitors?.map((competitor, index) => {
+											if (!competitor || !competitor.Name) return null;
+											const colorIndex = index % colors.length;
+
+											return (
+												<Box
+													key={competitor.ID || index}
+													sx={{
+														display: 'flex',
+														alignItems: 'center',
+														gap: 0.5,
+														minWidth: 'fit-content'
+													}}
+												>
+													<Box
+														sx={{
+															width: 12,
+															height: 12,
+															borderRadius: '50%',
+															backgroundColor: colors[colorIndex],
+															border: `2px solid ${colors[colorIndex]}`,
+															flexShrink: 0
+														}}
+													/>
+													<Typography
+														variant="caption"
+														sx={{
+															fontSize: { xs: '0.7rem', sm: '0.75rem' },
+															whiteSpace: 'nowrap'
+														}}
+													>
+														{competitor.Name}
+													</Typography>
+												</Box>
+											);
+										}).filter(Boolean);
+									})()}
 								</Box>
-							)}
+							</Box>
 						</CardContent>
 					</Card>
 				</Box>
@@ -581,166 +801,114 @@ const DashboardContent = ({
 				<Box sx={{ mb: 6, width: '100%' }}>
 					<Card>
 						<CardContent>
-							<Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-								<Typography variant="h5" component="h2" gutterBottom sx={{ color: theme.palette.primary.main, fontWeight: 'bold', mb: 1 }}>
-									📈 Performance Over Time
-								</Typography>
-							</Box>
-							<Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-								{isSmallScreen ? (showMorePerformance ? 'Track how each competitor\'s performance evolved throughout the season. Switch between round-by-round votes and cumulative totals.' : 'Track performance over the season.') : 'Track how each competitor\'s performance evolved throughout the season. Switch between round-by-round votes and cumulative totals.'}
+							<Typography variant="h5" component="h2" gutterBottom sx={{ color: theme.palette.primary.main, fontWeight: 'bold' }}>
+								📈 Performance Over Time
 							</Typography>
-							{isSmallScreen && (
-								<Button size="small" onClick={() => setShowMorePerformance(v => !v)} sx={{ mb: 2 }}>
-									{showMorePerformance ? 'Less' : 'More'}
-								</Button>
-							)}
+							<Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+								Track how each competitor's performance evolved throughout the season. Switch between round-by-round votes and cumulative totals.
+							</Typography>
 
-							{/* Chart Tabs and Focus Mode */}
-							<Box sx={{ borderBottom: 1, borderColor: 'divider', mb: 3, position: isSmallScreen ? 'sticky' : 'static', top: 0, zIndex: 1, bgcolor: 'background.paper' }}>
+							{/* Chart Tabs */}
+							<Box sx={{ borderBottom: 1, borderColor: 'divider', mb: 3 }}>
 								<Tabs value={chartTabValue} onChange={handleChartTabChange} aria-label="chart tabs">
 									<Tab label="Total Votes" {...a11yProps(0)} />
 									<Tab label="Round-by-Round Votes" {...a11yProps(1)} />
 								</Tabs>
-								<Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mt: 1 }}>
-									<ToggleButtonGroup size="small" value={lineFocusMode} exclusive onChange={handleLineFocusChange} aria-label="focus mode">
-										<ToggleButton value="all">All</ToggleButton>
-										<ToggleButton value="top5">Top 5</ToggleButton>
-									</ToggleButtonGroup>
-									{focusedCompetitorName && (
-										<Button size="small" onClick={clearFocus}>Clear focus</Button>
-									)}
-								</Box>
 							</Box>
 
+							{/* Quick controls: Top N and highlight */}
+							<Box sx={{
+								display: 'flex',
+								flexWrap: 'wrap',
+								gap: 2,
+								alignItems: 'center',
+								justifyContent: 'space-between',
+								mb: 2
+							}}>
+								<Stack direction="row" spacing={2} alignItems="center">
+									<FormControlLabel
+										control={<Switch checked={onlyTopN} onChange={(e) => setOnlyTopN(e.target.checked)} />}
+										label={`Show Top ${topN}`}
+									/>
+									<Select size="small" value={topN} onChange={(e) => setTopN(Number(e.target.value))} disabled={!onlyTopN}>
+										{[3, 5, 7, 10, 15, 20].map(n => (
+											<MenuItem key={n} value={n}>{n}</MenuItem>
+										))}
+									</Select>
+								</Stack>
+
+								<Autocomplete
+									sx={{ minWidth: 220, flex: 1, maxWidth: 320 }}
+									size="small"
+									options={(data?.competitors || []).filter(c => c && c.Name).map(c => c.Name)}
+									value={highlightName || null}
+									onChange={(_, value) => setHighlightName(value || '')}
+									renderInput={(params) => <TextField {...params} label="Highlight competitor" placeholder="Type a name" />}
+									clearOnEscape
+								/>
+							</Box>
 							{/* Chart Tab Panels */}
-							<TabPanel value={chartTabValue} index={1}>
-								<Box sx={{ overflowX: 'auto', pb: 1 }}>
-									<Box sx={{ width: '100%', minWidth: { xs: 720, sm: '100%' }, height: { xs: 420, sm: 450, md: 500 }, minHeight: { xs: 360, sm: 400 } }}>
-										<ResponsiveContainer width="100%" height="100%">
-											<LineChart
-												data={generatePerformanceData(false)}
-												margin={{
-													top: 20,
-													right: isMediumScreen ? 40 : 120,
-													bottom: isMediumScreen ? 40 : 60,
-													left: isMediumScreen ? 10 : 20,
-												}}
-												onClick={(data) => {
-													if (data && data.activeLabel) {
-														handleRoundClick(data.activePayload, data.activeLabel);
-													}
-												}}
-											>
-												<CartesianGrid strokeDasharray="3 3" stroke={theme.palette.divider} opacity={isSmallScreen ? 0.2 : 0.3} />
-												<XAxis dataKey="round" type="number" domain={['dataMin', 'dataMax']} tick={{ fill: theme.palette.text.secondary, fontSize: isMediumScreen ? 10 : 12 }} label={{ value: 'Round', position: 'insideBottom', offset: isMediumScreen ? -5 : -10, style: { textAnchor: 'middle', fill: theme.palette.text.primary, fontSize: isMediumScreen ? '12px' : '14px', fontWeight: 'bold' } }} />
-												<YAxis tick={{ fill: theme.palette.text.secondary, fontSize: isMediumScreen ? 10 : 12 }} label={{ value: 'Votes Received', angle: -90, position: 'insideLeft', style: { textAnchor: 'middle', fill: theme.palette.text.primary, fontSize: isMediumScreen ? '12px' : '14px', fontWeight: 'bold' } }} />
-												<Tooltip content={({ active, payload, label }) => {
-													if (active && payload && payload.length) {
-														const hasData = payload.some(entry => entry.value !== null);
-														if (!hasData) return null;
-
-														// Get round info
-														const rn = (typeof label === 'number' && label > 0) ? label : (selectedRound?.roundNumber ?? 1);
-														const currentRound = data.rounds?.[rn - 1];
-
-														// Find the winner(s) (highest votes)
-														const competitorsWithVotes = payload
-															.filter(entry => entry.value !== null)
-															.sort((a, b) => (b.value || 0) - (a.value || 0));
-
-														const topScore = competitorsWithVotes[0]?.value;
-														const winners = competitorsWithVotes.filter(entry => entry.value === topScore);
-														const isMultipleWinners = winners.length > 1;
-
-														return (
-															<Paper sx={{
-																p: 1.5,
-																backgroundColor: 'white',
-																border: `2px solid ${theme.palette.primary.main}`,
-																fontSize: '0.875rem',
-																maxWidth: '280px'
-															}}>
-																<Typography variant="subtitle2" sx={{
-																	fontWeight: 'bold',
-																	color: theme.palette.primary.main,
-																	mb: 0.5
-																}}>
-																	{(() => {
-																		const rn = (typeof label === 'number' && label > 0) ? label : (selectedRound?.roundNumber ?? 1);
-																		const currentRound = data.rounds?.[rn - 1];
-																		return currentRound?.Name || `Round ${rn}`;
-																	})()}
-																</Typography>
-																{winners.length > 0 && (
-																	<Typography variant="body2" sx={{
-																		mb: 0.5,
-																		color: 'text.primary'
-																	}}>
-																		{isMultipleWinners ? 'Tied Winners' : 'Winner'}: {
-																			isMultipleWinners
-																				? winners.map(w => w.dataKey).join(', ')
-																				: winners[0].dataKey
-																		} ({topScore} votes)
-																	</Typography>
-																)}
-																<Typography variant="caption" sx={{
-																	color: 'text.secondary',
-																	fontStyle: 'italic'
-																}}>
-																	Click to see detailed results
-																</Typography>
-															</Paper>
-														);
-													}
-													return null;
-												}} />
-												{(() => {
-													const colors = ['#FF0000', '#00FF00', '#0000FF', '#FFFF00', '#FF00FF', '#00FFFF', '#800000', '#008000', '#000080', '#808000', '#800080', '#008080', '#FFA500', '#FFC0CB', '#A52A2A', '#808080', '#000000', '#DC143C', '#FFD700', '#4B0082', '#FF6347', '#32CD32', '#87CEEB', '#DDA0DD', '#F0E68C'];
-													const chartData = generatePerformanceData(false);
-													const visibleSet = getFilteredCompetitors(chartData);
-													const topNames = lineFocusMode === 'top5' ? new Set(getTopNCompetitorNames(5)) : null;
-													return data?.competitors?.map((competitor, index) => {
-														if (!competitor || !competitor.Name) return null;
-														const colorIndex = index % colors.length;
-														const name = competitor.Name;
-														if (!visibleSet.has(name)) return null;
-														if (topNames && !topNames.has(name)) return null;
-														const isDimmed = focusedCompetitorName && focusedCompetitorName !== name;
-														return (
-															<Line key={competitor.ID || index} type="linear" dataKey={name} stroke={colors[colorIndex]} strokeWidth={isDimmed ? 1 : (isSmallScreen ? 1.6 : 1.8)} strokeOpacity={isDimmed ? 0.15 : 1} dot={false} connectNulls={false} activeDot={{ r: isSmallScreen ? 7 : 5, strokeWidth: 2 }} />
-														);
-													}).filter(Boolean);
-												})()}
-											</LineChart>
-										</ResponsiveContainer>
-									</Box>
-								</Box>
-							</TabPanel>
-
 							<TabPanel value={chartTabValue} index={0}>
-								<Box sx={{ overflowX: 'auto', pb: 1 }}>
-									<Box sx={{ width: '100%', minWidth: { xs: 720, sm: '100%' }, height: { xs: 420, sm: 450, md: 500 }, minHeight: { xs: 360, sm: 400 } }}>
-										<ResponsiveContainer width="100%" height="100%">
-											<LineChart
-												data={generatePerformanceData(true)}
-												margin={{
-													top: 20,
-													right: isMediumScreen ? 40 : 120,
-													bottom: isMediumScreen ? 40 : 60,
-													left: isMediumScreen ? 10 : 20,
+								<Box sx={{
+									width: '100%',
+									height: { xs: 400, sm: 450, md: 500 },
+									minHeight: { xs: 350, sm: 400 }
+								}}>
+									<ResponsiveContainer width="100%" height="100%">
+										<LineChart
+											data={generatePerformanceData(true)}
+											margin={{
+												top: 20,
+												right: isMediumScreen ? 60 : 125,
+												bottom: isMediumScreen ? 40 : 60,
+												left: isMediumScreen ? 10 : 20,
+											}}
+										>
+											<CartesianGrid
+												strokeDasharray="3 3"
+												stroke={theme.palette.divider}
+												opacity={0.3}
+											/>
+											<XAxis
+												dataKey="round"
+												type="number"
+												domain={['dataMin', 'dataMax']}
+												tick={{ fill: theme.palette.text.secondary, fontSize: isMediumScreen ? 10 : 12 }}
+												label={{
+													value: 'Round',
+													position: 'insideBottom',
+													offset: isMediumScreen ? -5 : -10,
+													style: {
+														textAnchor: 'middle',
+														fill: theme.palette.text.primary,
+														fontSize: isMediumScreen ? '12px' : '14px',
+														fontWeight: 'bold'
+													}
 												}}
-											>
-												<CartesianGrid strokeDasharray="3 3" stroke={theme.palette.divider} opacity={isSmallScreen ? 0.2 : 0.3} />
-												<XAxis dataKey="round" type="number" domain={['dataMin', 'dataMax']} tick={{ fill: theme.palette.text.secondary, fontSize: isMediumScreen ? 10 : 12 }} label={{ value: 'Round', position: 'insideBottom', offset: isMediumScreen ? -5 : -10, style: { textAnchor: 'middle', fill: theme.palette.text.primary, fontSize: isMediumScreen ? '12px' : '14px', fontWeight: 'bold' } }} />
-												<YAxis tick={{ fill: theme.palette.text.secondary, fontSize: isMediumScreen ? 10 : 12 }} label={{ value: 'Total Votes Received', angle: -90, position: 'insideLeft', style: { textAnchor: 'middle', fill: theme.palette.text.primary, fontSize: isMediumScreen ? '12px' : '14px', fontWeight: 'bold' } }} />
-												<Tooltip content={({ active, payload, label }) => {
+											/>
+											<YAxis
+												tick={{ fill: theme.palette.text.secondary, fontSize: isMediumScreen ? 10 : 12 }}
+												label={{
+													value: 'Total Votes Received',
+													angle: -90,
+													position: 'insideLeft',
+													style: {
+														textAnchor: 'middle',
+														fill: theme.palette.text.primary,
+														fontSize: isMediumScreen ? '12px' : '14px',
+														fontWeight: 'bold'
+													}
+												}}
+											/>
+											<Tooltip
+												content={({ active, payload, label }) => {
 													if (active && payload && payload.length) {
 														const hasData = payload.some(entry => entry.value !== null && entry.value !== undefined);
 														if (!hasData) return null;
 
 														// Get round info
-														const rn = (typeof label === 'number' && label > 0) ? label : (selectedRound?.roundNumber ?? 1);
-														const currentRound = data.rounds?.[rn - 1];
+														const roundNumber = label;
+														const currentRound = data.rounds?.[roundNumber - 1];
 
 														// Find the leader(s) (highest cumulative votes)
 														const competitorsWithVotes = payload
@@ -764,11 +932,7 @@ const DashboardContent = ({
 																	color: theme.palette.primary.main,
 																	mb: 0.5
 																}}>
-																	{(() => {
-																		const rn = (typeof label === 'number' && label > 0) ? label : (selectedRound?.roundNumber ?? 1);
-																		const currentRound = data.rounds?.[rn - 1];
-																		return currentRound?.Name || `Round ${rn}`;
-																	})()}
+																	{currentRound?.Name || `Round ${label}`}
 																</Typography>
 																{leaders.length > 0 && (
 																	<Typography variant="body2" sx={{
@@ -792,27 +956,212 @@ const DashboardContent = ({
 														);
 													}
 													return null;
-												}} />
-												{(() => {
-													const colors = ['#FF0000', '#00FF00', '#0000FF', '#FFFF00', '#FF00FF', '#00FFFF', '#800000', '#008000', '#000080', '#808000', '#800080', '#008080', '#FFA500', '#FFC0CB', '#A52A2A', '#808080', '#000000', '#DC143C', '#FFD700', '#4B0082', '#FF6347', '#32CD32', '#87CEEB', '#DDA0DD', '#F0E68C'];
-													const chartData = generatePerformanceData(true);
-													const visibleSet = getFilteredCompetitors(chartData);
-													const topNames = lineFocusMode === 'top5' ? new Set(getTopNCompetitorNames(5)) : null;
-													return data?.competitors?.map((competitor, index) => {
-														if (!competitor || !competitor.Name) return null;
-														const colorIndex = index % colors.length;
-														const name = competitor.Name;
-														if (!visibleSet.has(name)) return null;
-														if (topNames && !topNames.has(name)) return null;
-														const isDimmed = focusedCompetitorName && focusedCompetitorName !== name;
+												}}
+											/>
+											{/* Generate a line for each competitor with hover/click highlight */}
+											{(() => {
+												const colors = DASHBOARD_COLOR_PALETTE;
+
+												const chartData = generatePerformanceData(true);
+												const visibleSet = getFilteredCompetitors(chartData);
+
+												return data?.competitors?.map((competitor, index) => {
+													if (!competitor || !competitor.Name) return null;
+													const colorIndex = index % colors.length;
+													const name = competitor.Name;
+													if (!visibleSet.has(name)) return null;
+
+													const isHighlighted = (hoveredSeries === name) || (highlightName === name);
+													const dimmed = !isHighlighted && (hoveredSeries || highlightName);
+
+													return (
+														<Line
+															key={competitor.ID || index}
+															type="linear"
+															dataKey={name}
+															stroke={colors[colorIndex]}
+															strokeWidth={isHighlighted ? 3.5 : 1.5}
+															strokeOpacity={dimmed ? 0.25 : 1}
+															dot={false}
+															connectNulls={true}
+															activeDot={{ r: isHighlighted ? 7 : 5, strokeWidth: 2 }}
+															onMouseEnter={() => setHoveredSeries(name)}
+															onMouseLeave={() => setHoveredSeries(prev => (prev === name ? null : prev))}
+														/>
+													);
+												}).filter(Boolean);
+											})()}
+											<Customized
+												component={PerformanceEndLabels}
+												hoveredSeries={hoveredSeries}
+												highlightName={highlightName}
+												setHoveredSeries={setHoveredSeries}
+												setHighlightName={setHighlightName}
+												isMediumScreen={isMediumScreen}
+											/>
+										</LineChart>
+									</ResponsiveContainer>
+								</Box>
+							</TabPanel>
+
+							<TabPanel value={chartTabValue} index={1}>
+								<Box sx={{
+									width: '100%',
+									height: { xs: 400, sm: 450, md: 500 },
+									minHeight: { xs: 350, sm: 400 }
+								}}>
+									<ResponsiveContainer width="100%" height="100%">
+										<LineChart
+											data={generatePerformanceData(false)}
+											margin={{
+												top: 20,
+												right: isMediumScreen ? 60 : 125,
+												bottom: isMediumScreen ? 40 : 60,
+												left: isMediumScreen ? 10 : 20,
+											}}
+											onClick={(data) => {
+												if (data && data.activeLabel) {
+													handleRoundClick(data.activePayload, data.activeLabel);
+												}
+											}}
+										>
+											<CartesianGrid
+												strokeDasharray="3 3"
+												stroke={theme.palette.divider}
+												opacity={0.3}
+											/>
+											<XAxis
+												dataKey="round"
+												type="number"
+												domain={['dataMin', 'dataMax']}
+												tick={{ fill: theme.palette.text.secondary, fontSize: isMediumScreen ? 10 : 12 }}
+												label={{
+													value: 'Round',
+													position: 'insideBottom',
+													offset: isMediumScreen ? -5 : -10,
+													style: {
+														textAnchor: 'middle',
+														fill: theme.palette.text.primary,
+														fontSize: isMediumScreen ? '12px' : '14px',
+														fontWeight: 'bold'
+													}
+												}}
+											/>
+											<YAxis
+												tick={{ fill: theme.palette.text.secondary, fontSize: isMediumScreen ? 10 : 12 }}
+												label={{
+													value: 'Votes Received',
+													angle: -90,
+													position: 'insideLeft',
+													style: {
+														textAnchor: 'middle',
+														fill: theme.palette.text.primary,
+														fontSize: isMediumScreen ? '12px' : '14px',
+														fontWeight: 'bold'
+													}
+												}}
+											/>
+											<Tooltip
+												content={({ active, payload, label }) => {
+													if (active && payload && payload.length) {
+														const hasData = payload.some(entry => entry.value !== null);
+														if (!hasData) return null;
+
+														// Get round info
+														const roundNumber = label;
+														const currentRound = data.rounds?.[roundNumber - 1];
+
+														// Find the winner(s) (highest votes)
+														const competitorsWithVotes = payload
+															.filter(entry => entry.value !== null)
+															.sort((a, b) => (b.value || 0) - (a.value || 0));
+
+														const topScore = competitorsWithVotes[0]?.value;
+														const winners = competitorsWithVotes.filter(entry => entry.value === topScore);
+														const isMultipleWinners = winners.length > 1;
+
 														return (
-															<Line key={competitor.ID || index} type="linear" dataKey={name} stroke={colors[colorIndex]} strokeWidth={isDimmed ? 1 : (isSmallScreen ? 1.6 : 1.8)} strokeOpacity={isDimmed ? 0.15 : 1} dot={false} connectNulls={true} activeDot={{ r: isSmallScreen ? 7 : 5, strokeWidth: 2 }} />
+															<Paper sx={{
+																p: 1.5,
+																backgroundColor: 'white',
+																border: `2px solid ${theme.palette.primary.main}`,
+																fontSize: '0.875rem',
+																maxWidth: '280px'
+															}}>
+																<Typography variant="subtitle2" sx={{
+																	fontWeight: 'bold',
+																	color: theme.palette.primary.main,
+																	mb: 0.5
+																}}>
+																	{currentRound?.Name || `Round ${label}`}
+																</Typography>
+																{winners.length > 0 && (
+																	<Typography variant="body2" sx={{
+																		mb: 0.5,
+																		color: 'text.primary'
+																	}}>
+																		{isMultipleWinners ? 'Tied Winners' : 'Winner'}: {
+																			isMultipleWinners
+																				? winners.map(w => w.dataKey).join(', ')
+																				: winners[0].dataKey
+																		} ({topScore} votes)
+																	</Typography>
+																)}
+																<Typography variant="caption" sx={{
+																	color: 'text.secondary',
+																	fontStyle: 'italic'
+																}}>
+																	Click to see detailed results
+																</Typography>
+															</Paper>
 														);
-													}).filter(Boolean);
-												})()}
-											</LineChart>
-										</ResponsiveContainer>
-									</Box>
+													}
+													return null;
+												}}
+											/>
+											{/* Generate a line for each competitor with hover highlight */}
+											{(() => {
+												const colors = DASHBOARD_COLOR_PALETTE;
+
+												const chartData = generatePerformanceData(false);
+												const visibleSet = getFilteredCompetitors(chartData);
+
+												return data?.competitors?.map((competitor, index) => {
+													if (!competitor || !competitor.Name) return null;
+													const colorIndex = index % colors.length;
+													const name = competitor.Name;
+													if (!visibleSet.has(name)) return null;
+
+													const isHighlighted = (hoveredSeries === name) || (highlightName === name);
+													const dimmed = !isHighlighted && (hoveredSeries || highlightName);
+
+													return (
+														<Line
+															key={competitor.ID || index}
+															type="linear"
+															dataKey={name}
+															stroke={colors[colorIndex]}
+															strokeWidth={isHighlighted ? 3.5 : 1.5}
+															strokeOpacity={dimmed ? 0.25 : 1}
+															dot={false}
+															connectNulls={false}
+															activeDot={{ r: isHighlighted ? 7 : 5, strokeWidth: 2 }}
+															onMouseEnter={() => setHoveredSeries(name)}
+															onMouseLeave={() => setHoveredSeries(prev => (prev === name ? null : prev))}
+														/>
+													);
+												}).filter(Boolean);
+											})()}
+											<Customized
+												component={PerformanceEndLabels}
+												hoveredSeries={hoveredSeries}
+												highlightName={highlightName}
+												setHoveredSeries={setHoveredSeries}
+												setHighlightName={setHighlightName}
+												isMediumScreen={isMediumScreen}
+											/>
+										</LineChart>
+									</ResponsiveContainer>
 								</Box>
 							</TabPanel>
 							<Typography variant="body2" color="text.secondary" sx={{
@@ -820,67 +1169,250 @@ const DashboardContent = ({
 								fontStyle: 'italic',
 								fontSize: { xs: '0.75rem', sm: '0.875rem' }
 							}}>
-								{chartTabValue === 1 ?
-									(isMediumScreen ?
-										'Tap anywhere on the chart to see detailed round results. Missing points indicate no submission in that round.' :
-										'Click anywhere on the chart to see detailed round results with song information. Missing points indicate a competitor did not submit in that round.'
-									) :
+								{chartTabValue === 0 ?
 									(isMediumScreen ?
 										'Shows cumulative vote totals over time. Lines continue smoothly even when competitors miss rounds.' :
 										'Shows cumulative vote totals accumulated over time. Lines continue smoothly even when competitors miss rounds, showing their running total.'
+									) :
+									(isMediumScreen ?
+										'Tap anywhere on the chart to see detailed round results. Missing points indicate no submission in that round.' :
+										'Click anywhere on the chart to see detailed round results with song information. Missing points indicate a competitor did not submit in that round.'
 									)
+								}{' '}
+								{isMediumScreen ?
+									'Tap competitor labels on the right to highlight individual lines.' :
+									'Click competitor labels on the right to highlight individual lines.'
 								}
 							</Typography>
 
 							{/* Color Legend */}
-							{isSmallScreen ? (
-								<Accordion sx={{ mt: 2 }}>
-									<AccordionSummary expandIcon={<ExpandMoreIcon />}>
-										<Typography variant="subtitle2" sx={{ fontWeight: 'bold' }}>Competitor Legend</Typography>
-									</AccordionSummary>
-									<AccordionDetails>
-										<Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1.5, justifyContent: 'center' }}>
-											{(() => {
-												const colors = ['#FF0000', '#00FF00', '#0000FF', '#FFFF00', '#FF00FF', '#00FFFF', '#800000', '#008000', '#000080', '#808000', '#800080', '#008080', '#FFA500', '#FFC0CB', '#A52A2A', '#808080', '#000000', '#DC143C', '#FFD700', '#4B0082', '#FF6347', '#32CD32', '#87CEEB', '#DDA0DD', '#F0E68C'];
-												return data?.competitors?.map((competitor, index) => {
-													if (!competitor || !competitor.Name) return null;
-													const colorIndex = index % colors.length;
-													return (
-														<Box key={competitor.ID || index} onClick={() => handleFocusToggle(competitor.Name)} sx={{ display: 'flex', alignItems: 'center', gap: 0.5, minWidth: 'fit-content', cursor: 'pointer', opacity: !focusedCompetitorName || focusedCompetitorName === competitor.Name ? 1 : 0.4 }}>
-															<Box sx={{ width: 12, height: 12, borderRadius: '50%', backgroundColor: colors[colorIndex], border: `2px solid ${colors[colorIndex]}`, flexShrink: 0 }} />
-															<Typography variant="caption" sx={{ fontSize: { xs: '0.7rem', sm: '0.75rem' }, whiteSpace: 'nowrap' }}>{competitor.Name}</Typography>
-														</Box>
-													);
-												}).filter(Boolean);
-											})()}
-										</Box>
-									</AccordionDetails>
-								</Accordion>
-							) : (
-								<Box sx={{ mt: 2, p: 2, bgcolor: 'grey.50', borderRadius: 1 }}>
-									<Typography variant="subtitle2" sx={{ fontWeight: 'bold', mb: 1 }}>
-										Competitor Legend:
-									</Typography>
-									<Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1.5, justifyContent: 'center' }}>
-										{(() => {
-											const colors = ['#FF0000', '#00FF00', '#0000FF', '#FFFF00', '#FF00FF', '#00FFFF', '#800000', '#008000', '#000080', '#808000', '#800080', '#008080', '#FFA500', '#FFC0CB', '#A52A2A', '#808080', '#000000', '#DC143C', '#FFD700', '#4B0082', '#FF6347', '#32CD32', '#87CEEB', '#DDA0DD', '#F0E68C'];
-											return data?.competitors?.map((competitor, index) => {
-												if (!competitor || !competitor.Name) return null;
-												const colorIndex = index % colors.length;
-												return (
-													<Box key={competitor.ID || index} onClick={() => handleFocusToggle(competitor.Name)} sx={{ display: 'flex', alignItems: 'center', gap: 0.5, minWidth: 'fit-content', cursor: 'pointer', opacity: !focusedCompetitorName || focusedCompetitorName === competitor.Name ? 1 : 0.4 }}>
-														<Box sx={{ width: 12, height: 12, borderRadius: '50%', backgroundColor: colors[colorIndex], border: `2px solid ${colors[colorIndex]}`, flexShrink: 0 }} />
-														<Typography variant="caption" sx={{ fontSize: { xs: '0.7rem', sm: '0.75rem' }, whiteSpace: 'nowrap' }}>{competitor.Name}</Typography>
-													</Box>
-												);
-											}).filter(Boolean);
-										})()}
-									</Box>
+							<Box sx={{ mt: 2, p: 2, bgcolor: 'grey.50', borderRadius: 1 }}>
+								<Typography variant="subtitle2" sx={{ fontWeight: 'bold', mb: 1 }}>
+									Competitor Legend:
+								</Typography>
+								<Box sx={{
+									display: 'flex',
+									flexWrap: 'wrap',
+									gap: 1.5,
+									justifyContent: 'center'
+								}}>
+									{(() => {
+										const colors = DASHBOARD_COLOR_PALETTE;
+
+										return data?.competitors?.map((competitor, index) => {
+											if (!competitor || !competitor.Name) return null;
+											const colorIndex = index % colors.length;
+
+											return (
+												<Box
+													key={competitor.ID || index}
+													sx={{
+														display: 'flex',
+														alignItems: 'center',
+														gap: 0.5,
+														minWidth: 'fit-content'
+													}}
+												>
+													{/* Line indicator instead of dot */}
+													<Box
+														sx={{
+															width: 20,
+															height: 3,
+															backgroundColor: colors[colorIndex],
+															borderRadius: 1,
+															flexShrink: 0
+														}}
+													/>
+													<Typography
+														variant="caption"
+														sx={{
+															fontSize: { xs: '0.7rem', sm: '0.75rem' },
+															whiteSpace: 'nowrap'
+														}}
+													>
+														{competitor.Name}
+													</Typography>
+												</Box>
+											);
+										}).filter(Boolean);
+									})()}
 								</Box>
-							)}
+							</Box>
 						</CardContent>
 					</Card>
 				</Box>
+
+				{/* Submission Timing vs Performance Graph */}
+				{hasTimingData && (
+					<Card sx={{ mb: 6 }}>
+						<CardContent>
+							<Typography variant="h5" component="h3" gutterBottom sx={{ color: theme.palette.primary.main, fontWeight: 'bold' }}>
+								📊 Submission Timing vs Performance
+							</Typography>
+							<Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+								Each point represents a song. The x-axis shows when it was submitted during the round (0% = first submission, 100% = last), and the y-axis shows how well it performed relative to the round.
+							</Typography>
+
+							<Box sx={{ maxWidth: 360, mb: 3 }}>
+								<Autocomplete
+									size="small"
+									options={timingCompetitorNames}
+									value={timingHighlight || null}
+									onChange={(_, value) => setTimingHighlight(value || '')}
+									renderInput={(params) => (
+										<TextField {...params} label="Highlight competitor" placeholder="Show one competitor" />
+									)}
+									clearOnEscape
+								/>
+							</Box>
+
+							<Box sx={{
+								width: '100%',
+								height: { xs: 360, sm: 420, md: 480 },
+								minHeight: { xs: 320, sm: 360 }
+							}}>
+								<ResponsiveContainer width="100%" height="100%">
+									<ScatterChart
+										margin={{
+											top: 20,
+											right: isMediumScreen ? 20 : 60,
+											bottom: isMediumScreen ? 40 : 60,
+											left: isMediumScreen ? 10 : 20,
+										}}
+									>
+										<CartesianGrid strokeDasharray="3 3" stroke={theme.palette.divider} opacity={0.3} />
+										<XAxis
+											type="number"
+											dataKey="submissionPercent"
+											name="Submission Timing"
+											domain={[0, 100]}
+											tick={{ fill: theme.palette.text.secondary, fontSize: isMediumScreen ? 10 : 12 }}
+											label={{
+												value: 'Submission Timing (0% = first, 100% = last)',
+												position: 'bottom',
+												offset: isMediumScreen ? -5 : -10,
+												style: {
+													textAnchor: 'middle',
+													fill: theme.palette.text.primary,
+													fontSize: isMediumScreen ? '12px' : '14px',
+													fontWeight: 'bold'
+												}
+											}}
+										/>
+										<YAxis
+											type="number"
+											dataKey="performancePercent"
+											name="Normalized Performance"
+											domain={[0, 100]}
+											tick={{ fill: theme.palette.text.secondary, fontSize: isMediumScreen ? 10 : 12 }}
+											label={{
+												value: 'Performance (0-100%)',
+												angle: -90,
+												position: 'insideLeft',
+												style: {
+													textAnchor: 'middle',
+													fill: theme.palette.text.primary,
+													fontSize: isMediumScreen ? '12px' : '14px',
+													fontWeight: 'bold'
+												}
+											}}
+										/>
+										<Tooltip
+											content={({ active, payload }) => {
+												if (active && payload && payload.length) {
+													const dataPoint = payload[0].payload;
+													return (
+														<Paper sx={{
+															p: { xs: 1.5, sm: 2 },
+															backgroundColor: 'white',
+															border: `2px solid ${theme.palette.primary.main}`,
+															maxWidth: 300
+														}}>
+															<Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: theme.palette.primary.main }}>
+																{dataPoint.title} — {dataPoint.competitorName}
+															</Typography>
+															<Typography variant="body2" color="text.secondary">
+																Round: {dataPoint.roundName}
+															</Typography>
+															<Typography variant="body2">
+																Submission order: {dataPoint.submissionOrder}/{dataPoint.totalSubmissions}
+															</Typography>
+															<Typography variant="body2">
+																Votes: {dataPoint.votes}
+															</Typography>
+															<Typography variant="body2">
+																Timing: {dataPoint.submissionPercent}%
+															</Typography>
+															<Typography variant="body2">
+																Performance: {dataPoint.performancePercent}%
+															</Typography>
+														</Paper>
+													);
+												}
+												return null;
+											}}
+										/>
+										<Scatter
+											data={filteredTimingData}
+											fill={theme.palette.primary.main}
+										>
+											{filteredTimingData.map((entry, index) => (
+												<Cell
+													key={`timing-cell-${index}`}
+													fill={entry.color}
+													fillOpacity={timingHighlight ? 0.9 : 0.65}
+													stroke={entry.color}
+													strokeWidth={timingHighlight ? 2.5 : 1.5}
+													r={timingHighlight ? 7 : 5}
+												/>
+											))}
+										</Scatter>
+									</ScatterChart>
+								</ResponsiveContainer>
+							</Box>
+							<Typography variant="body2" color="text.secondary" sx={{ mt: 2, fontStyle: 'italic', fontSize: { xs: '0.75rem', sm: '0.875rem' } }}>
+								{isMediumScreen
+									? 'Tap points for details. Colors match competitors.'
+									: 'Hover over points to see song details. Each color represents a different competitor. Use the dropdown to focus on one competitor.'}
+							</Typography>
+
+							{/* Timing Color Legend */}
+							<Box sx={{ mt: 2, p: 2, bgcolor: 'grey.50', borderRadius: 1 }}>
+								<Typography variant="subtitle2" sx={{ fontWeight: 'bold', mb: 1 }}>
+									Competitor Colors:
+								</Typography>
+								<Box sx={{
+									display: 'flex',
+									flexWrap: 'wrap',
+									gap: 1.5,
+									justifyContent: 'center'
+								}}>
+									{timingCompetitorNames.map((name, idx) => {
+										const foundIdx = data?.competitors?.findIndex(c => c.Name === name);
+										const colorIndex = (foundIdx !== undefined && foundIdx >= 0) ? foundIdx : idx;
+										const colors = DASHBOARD_COLOR_PALETTE;
+										const color = colors[colorIndex % colors.length];
+										return (
+											<Box key={name} sx={{ display: 'flex', alignItems: 'center', gap: 0.5, minWidth: 'fit-content' }}>
+												<Box sx={{
+													width: 12,
+													height: 12,
+													borderRadius: '50%',
+													backgroundColor: color,
+													border: `2px solid ${color}`,
+													flexShrink: 0
+												}} />
+												<Typography variant="caption" sx={{ fontSize: { xs: '0.7rem', sm: '0.75rem' }, whiteSpace: 'nowrap' }}>
+													{name}
+												</Typography>
+											</Box>
+										);
+									})}
+								</Box>
+							</Box>
+						</CardContent>
+					</Card>
+				)}
 
 				<Typography variant="h4" component="h2" gutterBottom align="center" sx={{ mb: 4, mt: 2, fontSize: { xs: '1.5rem', sm: '2rem', md: '2.25rem' } }}>
 					League Superlatives
@@ -1304,8 +1836,49 @@ const DashboardContent = ({
 								/>
 							</Box>
 						</Grid>
-					</Grid>
 
+						{/* Early Bird Submitter */}
+						<Grid item xs={12} sm={6} md={4} lg={4} xl={3} sx={{
+							paddingBottom: 3,
+							display: 'flex',
+							justifyContent: 'center'
+						}}>
+							<Box sx={{ width: '100%', maxWidth: '500px' }}>
+								<SuperlativeCard
+									title="Early Bird Submitter"
+									description="Submits early and still lands high scores"
+									winnerName={earlyBirdData?.competitor?.Name}
+									detail={formatTimingDetail('Early Bird', earlyBirdData)}
+									additionalCompetitors={earlyBirdData?.restOfField}
+									isTied={earlyBirdData?.isTied}
+									tiedWinners={earlyBirdData?.tiedWinners}
+									tiedDetails={earlyBirdData?.tiedDetails}
+									calculationKey="earlyBird"
+								/>
+							</Box>
+						</Grid>
+
+						{/* Last Minute Submitter */}
+						<Grid item xs={12} sm={6} md={4} lg={4} xl={3} sx={{
+							paddingBottom: 3,
+							display: 'flex',
+							justifyContent: 'center'
+						}}>
+							<Box sx={{ width: '100%', maxWidth: '500px' }}>
+								<SuperlativeCard
+									title="Last Minute Submitter"
+									description="Submits late but still crushes the round"
+									winnerName={lastMinuteData?.competitor?.Name}
+									detail={formatTimingDetail('Last Minute', lastMinuteData)}
+									additionalCompetitors={lastMinuteData?.restOfField}
+									isTied={lastMinuteData?.isTied}
+									tiedWinners={lastMinuteData?.tiedWinners}
+									tiedDetails={lastMinuteData?.tiedDetails}
+									calculationKey="lastMinute"
+								/>
+							</Box>
+						</Grid>
+					</Grid>
 					{/* Comments & Engagement Section */}
 					<Typography variant="h5" component="h3" gutterBottom align="center" sx={{ mb: 3, mt: 4, fontSize: { xs: '1.25rem', sm: '1.5rem' }, color: 'primary.main', fontWeight: 'bold' }}>
 						💬 Comments & Engagement
@@ -1536,9 +2109,17 @@ const DashboardContent = ({
 					maxHeight: { xs: '80vh', sm: '70vh' },
 					overflowY: 'auto',
 					outline: 'none',
-					'&::-webkit-scrollbar': { width: '8px' },
-					'&::-webkit-scrollbar-track': { backgroundColor: 'rgba(0,0,0,0.05)', borderRadius: '10px' },
-					'&::-webkit-scrollbar-thumb': { backgroundColor: 'rgba(0,0,0,0.2)', borderRadius: '10px' }
+					'&::-webkit-scrollbar': {
+						width: '8px',
+					},
+					'&::-webkit-scrollbar-track': {
+						backgroundColor: 'rgba(0,0,0,0.05)',
+						borderRadius: '10px',
+					},
+					'&::-webkit-scrollbar-thumb': {
+						backgroundColor: 'rgba(0,0,0,0.2)',
+						borderRadius: '10px',
+					}
 				}}>
 					{selectedRound && (
 						<>
@@ -1548,9 +2129,9 @@ const DashboardContent = ({
 									color: theme.palette.primary.main
 								}}>
 									{(() => {
-										const rn = (typeof selectedRound.roundNumber === 'number' && selectedRound.roundNumber > 0) ? selectedRound.roundNumber : (selectedRound?.roundNumber ?? 1);
-										const currentRound = data.rounds?.[rn - 1];
-										return currentRound?.Name || `Round ${rn}`;
+										const roundNumber = selectedRound.roundNumber;
+										const currentRound = data.rounds?.[roundNumber - 1];
+										return currentRound?.Name || `Round ${roundNumber}`;
 									})()}
 								</Typography>
 								<IconButton onClick={handleModalClose} size="small">
@@ -1559,8 +2140,8 @@ const DashboardContent = ({
 							</Box>
 
 							{(() => {
-								const rn = (typeof selectedRound.roundNumber === 'number' && selectedRound.roundNumber > 0) ? selectedRound.roundNumber : (selectedRound?.roundNumber ?? 1);
-								const currentRound = data.rounds?.[rn - 1];
+								const roundNumber = selectedRound.roundNumber;
+								const currentRound = data.rounds?.[roundNumber - 1];
 
 								// Create a map of competitor submissions for this round
 								const roundSubmissions = {};
@@ -1586,10 +2167,9 @@ const DashboardContent = ({
 										{competitors.map((entry, index) => {
 											const competitorName = entry.dataKey;
 											const submission = roundSubmissions[competitorName];
-											const colors = [
-												'#FF0000', '#00FF00', '#0000FF', '#FFFF00', '#FF00FF', '#00FFFF', '#800000', '#008000', '#000080', '#808000', '#800080', '#008080', '#FFA500', '#FFC0CB', '#A52A2A', '#808080', '#000000', '#DC143C', '#FFD700', '#4B0082', '#FF6347', '#32CD32', '#87CEEB', '#DDA0DD', '#F0E68C'
-											];
-											const competitorIndex = data.competitors?.findIndex(c => c.Name === competitorName) || 0;
+											const colors = DASHBOARD_COLOR_PALETTE;
+											const foundIdx = data.competitors?.findIndex(c => c.Name === competitorName);
+											const competitorIndex = (foundIdx !== undefined && foundIdx >= 0) ? foundIdx : 0;
 											const color = colors[competitorIndex % colors.length];
 
 											return (
@@ -1608,17 +2188,54 @@ const DashboardContent = ({
 															borderRadius: '50%',
 															backgroundColor: color,
 															border: `2px solid ${color}`,
-															p: 0.5
+															flexShrink: 0,
+															mt: 0.25
 														}}
-													>
-														{/* Add any additional styling you want for the dot */}
+													/>
+													<Box sx={{ flexGrow: 1 }}>
+														<Typography
+															variant="h6"
+															sx={{
+																fontSize: '1rem',
+																fontWeight: 'bold',
+																color: color,
+																mb: 0.5
+															}}
+														>
+															{competitorName}: {entry.value} votes
+														</Typography>
+														{submission ? (
+															<Typography
+																variant="body2"
+																sx={{
+																	color: 'text.primary',
+																	mb: 0.25
+																}}
+															>
+																<strong>"{submission.title}"</strong>
+															</Typography>
+														) : (
+															<Typography
+																variant="body2"
+																sx={{
+																	color: 'text.secondary',
+																	fontStyle: 'italic'
+																}}
+															>
+																No submission
+															</Typography>
+														)}
+														{submission && (
+															<Typography
+																variant="body2"
+																sx={{
+																	color: 'text.secondary'
+																}}
+															>
+																by {submission.artist}
+															</Typography>
+														)}
 													</Box>
-													<Typography variant="body2" sx={{
-														fontSize: { xs: '0.75rem', sm: '0.875rem' },
-														mt: 0.5
-													}}>
-														{competitorName}
-													</Typography>
 												</Box>
 											);
 										})}
@@ -1628,64 +2245,6 @@ const DashboardContent = ({
 						</>
 					)}
 				</Paper>
-			</Modal>
-
-			{/* Fullscreen Chart Modal */}
-			<Modal open={fullscreenOpen} onClose={closeFullscreen} sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-				<Box sx={{ width: '100vw', height: '100vh', bgcolor: 'background.paper', p: 1, position: 'relative' }}>
-					<IconButton onClick={closeFullscreen} sx={{ position: 'absolute', top: 8, right: 8, zIndex: 10 }} aria-label="close fullscreen">
-						<CloseFullscreenIcon />
-					</IconButton>
-					<Box sx={{ width: '100%', height: '100%', pt: 4 }}>
-						<ResponsiveContainer width="100%" height="100%">
-							{fullscreenChart === 'scatter' && (
-								<ScatterChart margin={{ top: 20, right: 40, bottom: 40, left: 20 }}>
-									<CartesianGrid strokeDasharray="3 3" opacity={0.2} />
-									<XAxis type="number" dataKey="x" domain={[0, 100]} label={{ value: 'Spotify Popularity', position: 'bottom' }} />
-									<YAxis type="number" dataKey="y" domain={[0, 1]} tickFormatter={(v) => `${(v * 100).toFixed(0)}%`} label={{ value: 'Relative Performance', angle: -90, position: 'insideLeft' }} />
-									<Scatter data={(() => {
-										if (!data?.submissions || !data?.votes) return [];
-										const submissionVotes = {};
-										data.votes.forEach(v => { const uri = v['Spotify URI']; submissionVotes[uri] = (submissionVotes[uri] || 0) + parseInt(v['Points Assigned'] || 0); });
-										const totals = Object.values(submissionVotes); const max = Math.max(...totals); const min = Math.min(...totals); const range = max - min;
-										return data.submissions.filter(s => s.popularity != null).map(s => ({ x: s.popularity, y: range > 0 ? ((submissionVotes[s['Spotify URI']] || 0) - min) / range : 0.5, submitterId: s['Submitter ID'] }));
-									})()}>
-										{(() => {
-											const colors = ['#FF0000', '#00FF00', '#0000FF', '#FFFF00', '#FF00FF', '#00FFFF', '#800000', '#008000', '#000080', '#808000', '#800080', '#008080', '#FFA500', '#FFC0CB', '#A52A2A', '#808080', '#000000', '#DC143C', '#FFD700', '#4B0082', '#FF6347', '#32CD32', '#87CEEB', '#DDA0DD', '#F0E68C'];
-											return (data?.submissions || []).filter(s => s.popularity != null).map((s, i) => {
-												const idx = data.competitors.findIndex(c => c.ID === s['Submitter ID']);
-												const ci = idx >= 0 ? idx % colors.length : 0;
-												return <Cell key={`fs-cell-${i}`} fill={colors[ci]} stroke={colors[ci]} r={6} />;
-											});
-										})()}
-									</Scatter>
-								</ScatterChart>
-							)}
-							{(fullscreenChart === 'lineRound' || fullscreenChart === 'lineCumulative') && (
-								<LineChart data={generatePerformanceData(fullscreenChart === 'lineCumulative')} margin={{ top: 20, right: 40, bottom: 40, left: 20 }}>
-									<CartesianGrid strokeDasharray="3 3" opacity={0.2} />
-									<XAxis dataKey="round" type="number" domain={['dataMin', 'dataMax']} label={{ value: 'Round', position: 'insideBottom' }} />
-									<YAxis label={{ value: fullscreenChart === 'lineCumulative' ? 'Total Votes Received' : 'Votes Received', angle: -90, position: 'insideLeft' }} />
-									{(() => {
-										const colors = ['#FF0000', '#00FF00', '#0000FF', '#FFFF00', '#FF00FF', '#00FFFF', '#800000', '#008000', '#000080', '#808000', '#800080', '#008080', '#FFA500', '#FFC0CB', '#A52A2A', '#808080', '#000000', '#DC143C', '#FFD700', '#4B0082', '#FF6347', '#32CD32', '#87CEEB', '#DDA0DD', '#F0E68C'];
-										const chartData = generatePerformanceData(fullscreenChart === 'lineCumulative');
-										const visibleSet = getFilteredCompetitors(chartData);
-										return data?.competitors?.map((competitor, index) => {
-											if (!competitor || !competitor.Name) return null;
-											const colorIndex = index % colors.length; const name = competitor.Name; if (!visibleSet.has(name)) return null;
-											return <Line key={competitor.ID || index} type="linear" dataKey={name} stroke={colors[colorIndex]} strokeWidth={2} dot={false} connectNulls={fullscreenChart === 'lineCumulative'} />;
-										}).filter(Boolean);
-									})()}
-								</LineChart>
-							)}
-							{fullscreenChart === 'voting' && (
-								<Box sx={{ width: '100%', height: '100%' }}>
-									<VotingGraph competitors={data.competitors} votes={data.votes} submissions={data.submissions} fullScreen />
-								</Box>
-							)}
-						</ResponsiveContainer>
-					</Box>
-				</Box>
 			</Modal>
 		</Container>
 	);
