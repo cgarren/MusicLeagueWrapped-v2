@@ -2124,7 +2124,9 @@ export const calculateSubmissionTimingData = (submissions, votes, rounds) => {
 				votes: submission.votes,
 				normalizedPerformance,
 				timestamp: submission.timestamp,
-				submissionPosition: (index + 1) / sortedSubmissions.length // Normalized position (0-1)
+				submissionPosition: sortedSubmissions.length > 1
+					? index / (sortedSubmissions.length - 1)
+					: 0 // Normalized position (0-1, where 0 is first and 1 is last)
 			});
 		});
 	});

@@ -226,7 +226,7 @@ const DashboardContent = ({
 			return 'Not enough submissions to calculate this metric yet.';
 		}
 
-		const timingPercent = entry.avgPosition ? parseInt(entry.avgPosition) : null;
+		const timingPercent = (entry.avgPosition !== undefined && entry.avgPosition !== null) ? parseInt(entry.avgPosition) : null;
 		let timingDescription = 'N/A';
 		if (timingPercent !== null) {
 			if (timingPercent <= 50) {
@@ -236,7 +236,7 @@ const DashboardContent = ({
 			}
 		}
 
-		const performancePercent = entry.avgPerformance ? parseInt(entry.avgPerformance) : null;
+		const performancePercent = (entry.avgPerformance !== undefined && entry.avgPerformance !== null) ? parseInt(entry.avgPerformance) : null;
 		const performanceDescription = performancePercent !== null
 			? `Averaged ${performancePercent}% performance across all songs`
 			: 'N/A';
