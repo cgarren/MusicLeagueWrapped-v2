@@ -811,8 +811,8 @@ ${roundsDescription}`;
 							{/* Chart Tabs */}
 							<Box sx={{ borderBottom: 1, borderColor: 'divider', mb: 3 }}>
 								<Tabs value={chartTabValue} onChange={handleChartTabChange} aria-label="chart tabs">
-									<Tab label="Round-by-Round Votes" {...a11yProps(0)} />
-									<Tab label="Total Votes" {...a11yProps(1)} />
+									<Tab label="Total Votes" {...a11yProps(0)} />
+									<Tab label="Round-by-Round Votes" {...a11yProps(1)} />
 								</Tabs>
 							</Box>
 
@@ -849,6 +849,162 @@ ${roundsDescription}`;
 							</Box>
 							{/* Chart Tab Panels */}
 							<TabPanel value={chartTabValue} index={0}>
+								<Box sx={{
+									width: '100%',
+									height: { xs: 400, sm: 450, md: 500 },
+									minHeight: { xs: 350, sm: 400 }
+								}}>
+									<ResponsiveContainer width="100%" height="100%">
+										<LineChart
+											data={generatePerformanceData(true)}
+											margin={{
+												top: 20,
+												right: isMediumScreen ? 60 : 125,
+												bottom: isMediumScreen ? 40 : 60,
+												left: isMediumScreen ? 10 : 20,
+											}}
+										>
+											<CartesianGrid
+												strokeDasharray="3 3"
+												stroke={theme.palette.divider}
+												opacity={0.3}
+											/>
+											<XAxis
+												dataKey="round"
+												type="number"
+												domain={['dataMin', 'dataMax']}
+												tick={{ fill: theme.palette.text.secondary, fontSize: isMediumScreen ? 10 : 12 }}
+												label={{
+													value: 'Round',
+													position: 'insideBottom',
+													offset: isMediumScreen ? -5 : -10,
+													style: {
+														textAnchor: 'middle',
+														fill: theme.palette.text.primary,
+														fontSize: isMediumScreen ? '12px' : '14px',
+														fontWeight: 'bold'
+													}
+												}}
+											/>
+											<YAxis
+												tick={{ fill: theme.palette.text.secondary, fontSize: isMediumScreen ? 10 : 12 }}
+												label={{
+													value: 'Total Votes Received',
+													angle: -90,
+													position: 'insideLeft',
+													style: {
+														textAnchor: 'middle',
+														fill: theme.palette.text.primary,
+														fontSize: isMediumScreen ? '12px' : '14px',
+														fontWeight: 'bold'
+													}
+												}}
+											/>
+											<Tooltip
+												content={({ active, payload, label }) => {
+													if (active && payload && payload.length) {
+														const hasData = payload.some(entry => entry.value !== null && entry.value !== undefined);
+														if (!hasData) return null;
+
+														// Get round info
+														const roundNumber = label;
+														const currentRound = data.rounds?.[roundNumber - 1];
+
+														// Find the leader(s) (highest cumulative votes)
+														const competitorsWithVotes = payload
+															.filter(entry => entry.value !== null && entry.value !== undefined)
+															.sort((a, b) => (b.value || 0) - (a.value || 0));
+
+														const topScore = competitorsWithVotes[0]?.value;
+														const leaders = competitorsWithVotes.filter(entry => entry.value === topScore);
+														const isMultipleLeaders = leaders.length > 1;
+
+														return (
+															<Paper sx={{
+																p: 1.5,
+																backgroundColor: 'white',
+																border: `2px solid ${theme.palette.primary.main}`,
+																fontSize: '0.875rem',
+																maxWidth: '280px'
+															}}>
+																<Typography variant="subtitle2" sx={{
+																	fontWeight: 'bold',
+																	color: theme.palette.primary.main,
+																	mb: 0.5
+																}}>
+																	{currentRound?.Name || `Round ${label}`}
+																</Typography>
+																{leaders.length > 0 && (
+																	<Typography variant="body2" sx={{
+																		mb: 0.5,
+																		color: 'text.primary'
+																	}}>
+																		{isMultipleLeaders ? 'Tied Leaders' : 'Leader'}: {
+																			isMultipleLeaders
+																				? leaders.map(l => l.dataKey).join(', ')
+																				: leaders[0].dataKey
+																		} ({topScore} total votes)
+																	</Typography>
+																)}
+																<Typography variant="caption" sx={{
+																	color: 'text.secondary',
+																	fontStyle: 'italic'
+																}}>
+																	Cumulative totals through this round
+																</Typography>
+															</Paper>
+														);
+													}
+													return null;
+												}}
+											/>
+											{/* Generate a line for each competitor with hover/click highlight */}
+											{(() => {
+												const colors = DASHBOARD_COLOR_PALETTE;
+
+												const chartData = generatePerformanceData(true);
+												const visibleSet = getFilteredCompetitors(chartData);
+
+												return data?.competitors?.map((competitor, index) => {
+													if (!competitor || !competitor.Name) return null;
+													const colorIndex = index % colors.length;
+													const name = competitor.Name;
+													if (!visibleSet.has(name)) return null;
+
+													const isHighlighted = (hoveredSeries === name) || (highlightName === name);
+													const dimmed = !isHighlighted && (hoveredSeries || highlightName);
+
+													return (
+														<Line
+															key={competitor.ID || index}
+															type="linear"
+															dataKey={name}
+															stroke={colors[colorIndex]}
+															strokeWidth={isHighlighted ? 3.5 : 1.5}
+															strokeOpacity={dimmed ? 0.25 : 1}
+															dot={false}
+															connectNulls={true}
+															activeDot={{ r: isHighlighted ? 7 : 5, strokeWidth: 2 }}
+															onMouseEnter={() => setHoveredSeries(name)}
+															onMouseLeave={() => setHoveredSeries(prev => (prev === name ? null : prev))}
+														/>
+													);
+												}).filter(Boolean);
+											})()}
+											<Customized
+												component={PerformanceEndLabels}
+												hoveredSeries={hoveredSeries}
+												highlightName={highlightName}
+												setHoveredSeries={setHoveredSeries}
+												setHighlightName={setHighlightName}
+												isMediumScreen={isMediumScreen}
+											/>
+										</LineChart>
+									</ResponsiveContainer>
+								</Box>
+							</TabPanel>
+
+							<TabPanel value={chartTabValue} index={1}>
 								<Box sx={{
 									width: '100%',
 									height: { xs: 400, sm: 450, md: 500 },
@@ -1008,162 +1164,6 @@ ${roundsDescription}`;
 									</ResponsiveContainer>
 								</Box>
 							</TabPanel>
-
-							<TabPanel value={chartTabValue} index={1}>
-								<Box sx={{
-									width: '100%',
-									height: { xs: 400, sm: 450, md: 500 },
-									minHeight: { xs: 350, sm: 400 }
-								}}>
-									<ResponsiveContainer width="100%" height="100%">
-										<LineChart
-											data={generatePerformanceData(true)}
-											margin={{
-												top: 20,
-												right: isMediumScreen ? 60 : 125,
-												bottom: isMediumScreen ? 40 : 60,
-												left: isMediumScreen ? 10 : 20,
-											}}
-										>
-											<CartesianGrid
-												strokeDasharray="3 3"
-												stroke={theme.palette.divider}
-												opacity={0.3}
-											/>
-											<XAxis
-												dataKey="round"
-												type="number"
-												domain={['dataMin', 'dataMax']}
-												tick={{ fill: theme.palette.text.secondary, fontSize: isMediumScreen ? 10 : 12 }}
-												label={{
-													value: 'Round',
-													position: 'insideBottom',
-													offset: isMediumScreen ? -5 : -10,
-													style: {
-														textAnchor: 'middle',
-														fill: theme.palette.text.primary,
-														fontSize: isMediumScreen ? '12px' : '14px',
-														fontWeight: 'bold'
-													}
-												}}
-											/>
-											<YAxis
-												tick={{ fill: theme.palette.text.secondary, fontSize: isMediumScreen ? 10 : 12 }}
-												label={{
-													value: 'Total Votes Received',
-													angle: -90,
-													position: 'insideLeft',
-													style: {
-														textAnchor: 'middle',
-														fill: theme.palette.text.primary,
-														fontSize: isMediumScreen ? '12px' : '14px',
-														fontWeight: 'bold'
-													}
-												}}
-											/>
-											<Tooltip
-												content={({ active, payload, label }) => {
-													if (active && payload && payload.length) {
-														const hasData = payload.some(entry => entry.value !== null && entry.value !== undefined);
-														if (!hasData) return null;
-
-														// Get round info
-														const roundNumber = label;
-														const currentRound = data.rounds?.[roundNumber - 1];
-
-														// Find the leader(s) (highest cumulative votes)
-														const competitorsWithVotes = payload
-															.filter(entry => entry.value !== null && entry.value !== undefined)
-															.sort((a, b) => (b.value || 0) - (a.value || 0));
-
-														const topScore = competitorsWithVotes[0]?.value;
-														const leaders = competitorsWithVotes.filter(entry => entry.value === topScore);
-														const isMultipleLeaders = leaders.length > 1;
-
-														return (
-															<Paper sx={{
-																p: 1.5,
-																backgroundColor: 'white',
-																border: `2px solid ${theme.palette.primary.main}`,
-																fontSize: '0.875rem',
-																maxWidth: '280px'
-															}}>
-																<Typography variant="subtitle2" sx={{
-																	fontWeight: 'bold',
-																	color: theme.palette.primary.main,
-																	mb: 0.5
-																}}>
-																	{currentRound?.Name || `Round ${label}`}
-																</Typography>
-																{leaders.length > 0 && (
-																	<Typography variant="body2" sx={{
-																		mb: 0.5,
-																		color: 'text.primary'
-																	}}>
-																		{isMultipleLeaders ? 'Tied Leaders' : 'Leader'}: {
-																			isMultipleLeaders
-																				? leaders.map(l => l.dataKey).join(', ')
-																				: leaders[0].dataKey
-																		} ({topScore} total votes)
-																	</Typography>
-																)}
-																<Typography variant="caption" sx={{
-																	color: 'text.secondary',
-																	fontStyle: 'italic'
-																}}>
-																	Cumulative totals through this round
-																</Typography>
-															</Paper>
-														);
-													}
-													return null;
-												}}
-											/>
-											{/* Generate a line for each competitor with hover/click highlight */}
-											{(() => {
-												const colors = DASHBOARD_COLOR_PALETTE;
-
-												const chartData = generatePerformanceData(true);
-												const visibleSet = getFilteredCompetitors(chartData);
-
-												return data?.competitors?.map((competitor, index) => {
-													if (!competitor || !competitor.Name) return null;
-													const colorIndex = index % colors.length;
-													const name = competitor.Name;
-													if (!visibleSet.has(name)) return null;
-
-													const isHighlighted = (hoveredSeries === name) || (highlightName === name);
-													const dimmed = !isHighlighted && (hoveredSeries || highlightName);
-
-													return (
-														<Line
-															key={competitor.ID || index}
-															type="linear"
-															dataKey={name}
-															stroke={colors[colorIndex]}
-															strokeWidth={isHighlighted ? 3.5 : 1.5}
-															strokeOpacity={dimmed ? 0.25 : 1}
-															dot={false}
-															connectNulls={true}
-															activeDot={{ r: isHighlighted ? 7 : 5, strokeWidth: 2 }}
-															onMouseEnter={() => setHoveredSeries(name)}
-															onMouseLeave={() => setHoveredSeries(prev => (prev === name ? null : prev))}
-														/>
-													);
-												}).filter(Boolean);
-											})()}
-											<Customized
-												component={PerformanceEndLabels}
-												hoveredSeries={hoveredSeries}
-												highlightName={highlightName}
-												setHoveredSeries={setHoveredSeries}
-												setHighlightName={setHighlightName}
-												isMediumScreen={isMediumScreen}
-											/>
-										</LineChart>
-									</ResponsiveContainer>
-								</Box>
-							</TabPanel>
 							<Typography variant="body2" color="text.secondary" sx={{
 								mt: 2,
 								fontStyle: 'italic',
@@ -1171,12 +1171,12 @@ ${roundsDescription}`;
 							}}>
 								{chartTabValue === 0 ?
 									(isMediumScreen ?
-										'Tap anywhere on the chart to see detailed round results. Missing points indicate no submission in that round.' :
-										'Click anywhere on the chart to see detailed round results with song information. Missing points indicate a competitor did not submit in that round.'
-									) :
-									(isMediumScreen ?
 										'Shows cumulative vote totals over time. Lines continue smoothly even when competitors miss rounds.' :
 										'Shows cumulative vote totals accumulated over time. Lines continue smoothly even when competitors miss rounds, showing their running total.'
+									) :
+									(isMediumScreen ?
+										'Tap anywhere on the chart to see detailed round results. Missing points indicate no submission in that round.' :
+										'Click anywhere on the chart to see detailed round results with song information. Missing points indicate a competitor did not submit in that round.'
 									)
 								}{' '}
 								{isMediumScreen ?
