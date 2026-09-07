@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Container, Typography, Grid, Box, Tabs, Tab, useMediaQuery, useTheme, Card, CardContent, Paper, Modal, IconButton, Stack, FormControlLabel, Switch, Select, MenuItem, TextField, Autocomplete } from '@mui/material';
 import { Close } from '@mui/icons-material';
-import { ScatterChart, Scatter, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, LineChart, Line, LabelList } from 'recharts';
+import { ScatterChart, Scatter, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, LineChart, Line, Customized } from 'recharts';
 
 // Individual award components
 import SuperlativeCard from './SuperlativeCard';
@@ -44,6 +44,164 @@ function a11yProps(index) {
 		'aria-controls': `simple-tabpanel-${index}`,
 	};
 }
+
+// End labels component rendered on top of LineChart with collision relaxation and leader curves
+const PerformanceEndLabels = ({
+	formattedGraphicalItems = [],
+	offset,
+	hoveredSeries,
+	highlightName,
+	setHoveredSeries,
+	setHighlightName,
+	isMediumScreen
+}) => {
+	// Extract end point for each visible line
+	const rawItems = [];
+	formattedGraphicalItems.forEach(item => {
+		const name = item?.item?.props?.dataKey || item?.props?.dataKey;
+		const color = item?.item?.props?.stroke || item?.props?.stroke || '#888';
+		const points = item?.props?.points || [];
+		let lastPt = null;
+		for (let i = points.length - 1; i >= 0; i--) {
+			const p = points[i];
+			if (p && p.x != null && p.y != null && p.value != null && !isNaN(p.x) && !isNaN(p.y)) {
+				lastPt = p;
+				break;
+			}
+		}
+		if (name && lastPt) {
+			rawItems.push({
+				name,
+				color,
+				origX: lastPt.x,
+				origY: lastPt.y,
+				value: lastPt.value
+			});
+		}
+	});
+
+	if (rawItems.length === 0) return null;
+
+	const minY = (offset?.top ?? 20) + 6;
+	const maxY = (offset?.top ?? 20) + (offset?.height ?? 300) - 6;
+	const minGap = isMediumScreen ? 13 : 15;
+
+	// Sort ascending by origY (top to bottom on screen), tie-break by name
+	const items = [...rawItems]
+		.map(it => ({ ...it, targetY: it.origY }))
+		.sort((a, b) => a.origY - b.origY || a.name.localeCompare(b.name));
+
+	const n = items.length;
+	if (n > 1) {
+		const availableSpace = Math.max(maxY - minY, 50);
+		const gap = Math.min(minGap, availableSpace / (n - 1));
+
+		// Iterative relaxation to resolve overlaps while preserving proximity to origY
+		for (let iter = 0; iter < 40; iter++) {
+			for (let i = 0; i < n - 1; i++) {
+				const dist = items[i + 1].targetY - items[i].targetY;
+				if (dist < gap) {
+					const overlap = gap - dist;
+					items[i].targetY -= overlap * 0.5;
+					items[i + 1].targetY += overlap * 0.5;
+				}
+			}
+
+			// Gentle anchor pull to prevent unnecessary drift for uncrowded lines
+			for (let i = 0; i < n; i++) {
+				items[i].targetY += (items[i].origY - items[i].targetY) * 0.08;
+			}
+
+			// Soft boundary constraint
+			if (items[0].targetY < minY) items[0].targetY = minY;
+			if (items[n - 1].targetY > maxY) items[n - 1].targetY = maxY;
+		}
+
+		// Strict non-overlap enforcement: forward pass
+		for (let i = 0; i < n - 1; i++) {
+			if (items[i + 1].targetY < items[i].targetY + gap) {
+				items[i + 1].targetY = items[i].targetY + gap;
+			}
+		}
+
+		// Backward pass if bottom boundary exceeded
+		if (items[n - 1].targetY > maxY) {
+			items[n - 1].targetY = maxY;
+			for (let i = n - 2; i >= 0; i--) {
+				if (items[i].targetY > items[i + 1].targetY - gap) {
+					items[i].targetY = items[i + 1].targetY - gap;
+				}
+			}
+		}
+
+		// Final check on top boundary
+		if (items[0].targetY < minY) {
+			items[0].targetY = minY;
+			for (let i = 0; i < n - 1; i++) {
+				if (items[i + 1].targetY < items[i].targetY + gap) {
+					items[i + 1].targetY = items[i].targetY + gap;
+				}
+			}
+		}
+	} else if (n === 1) {
+		items[0].targetY = Math.max(minY, Math.min(maxY, items[0].targetY));
+	}
+
+	return (
+		<g className="recharts-performance-end-labels">
+			{items.map(item => {
+				const isHighlighted = (hoveredSeries === item.name) || (highlightName === item.name);
+				const dimmed = !isHighlighted && Boolean(hoveredSeries || highlightName);
+
+				const p1x = item.origX + 2;
+				const p1y = item.origY;
+				const p2x = item.origX + 14;
+				const p2y = item.targetY;
+				const cx = (p1x + p2x) / 2;
+				const pathData = `M ${p1x},${p1y} C ${cx},${p1y} ${cx},${p2y} ${p2x},${p2y}`;
+
+				return (
+					<g
+						key={`end-label-${item.name}`}
+						style={{ cursor: 'pointer' }}
+						onMouseEnter={() => setHoveredSeries && setHoveredSeries(item.name)}
+						onMouseLeave={() => setHoveredSeries && setHoveredSeries(prev => prev === item.name ? null : prev)}
+						onClick={() => setHighlightName && setHighlightName(prev => prev === item.name ? '' : item.name)}
+					>
+						{/* Connecting leader curve from line endpoint to label */}
+						<path
+							d={pathData}
+							fill="none"
+							stroke={item.color}
+							strokeWidth={isHighlighted ? 2.5 : 1.2}
+							strokeOpacity={dimmed ? 0.2 : 0.85}
+							style={{ transition: 'stroke-width 0.15s ease, stroke-opacity 0.15s ease' }}
+						/>
+						{/* Label text */}
+						<text
+							x={item.origX + 18}
+							y={item.targetY}
+							fontSize={isHighlighted ? (isMediumScreen ? 12 : 13) : (isMediumScreen ? 11 : 12)}
+							fontWeight={isHighlighted ? 'bold' : '500'}
+							fill={item.color}
+							stroke="#fff"
+							strokeWidth={isHighlighted ? 4 : 3}
+							paintOrder="stroke"
+							dominantBaseline="central"
+							opacity={dimmed ? 0.25 : 1}
+							style={{
+								transition: 'opacity 0.15s ease, font-size 0.15s ease',
+								userSelect: 'none'
+							}}
+						>
+							{item.name}
+						</text>
+					</g>
+				);
+			})}
+		</g>
+	);
+};
 
 const DashboardContent = ({
 	data,
@@ -212,36 +370,6 @@ const DashboardContent = ({
 		return topList;
 	};
 
-	// Helper: compute last data index and label vertical offsets to minimize overlap
-	const getEndLabelMeta = (chartData, visibleSet) => {
-		const names = (data?.competitors || []).filter(c => c && c.Name).map(c => c.Name).filter(n => !visibleSet || visibleSet.has(n));
-		const lastIndexByName = {};
-		const lastValueByName = {};
-		names.forEach(name => {
-			let idx = -1;
-			for (let i = chartData.length - 1; i >= 0; i--) {
-				const v = chartData[i]?.[name];
-				if (v !== null && v !== undefined) { idx = i; break; }
-			}
-			lastIndexByName[name] = idx;
-			lastValueByName[name] = idx >= 0 ? chartData[idx][name] : -Infinity;
-		});
-
-		// Sort by last value to stack labels vertically
-		const sortedNames = names
-			.filter(n => lastIndexByName[n] >= 0)
-			.sort((a, b) => (lastValueByName[a] - lastValueByName[b]));
-
-		const dyByName = {};
-		const gap = 12; // pixels between labels
-		sortedNames.forEach((n, i) => {
-			// Center the stack around 0 for better distribution
-			const centerOffset = (sortedNames.length - 1) * gap / 2;
-			dyByName[n] = i * gap - centerOffset;
-		});
-
-		return { lastIndexByName, dyByName };
-	};
 
 	const formatTimingDetail = (entryLabel, entry) => {
 		if (!entry || !entry.score) {
@@ -735,7 +863,7 @@ ${roundsDescription}`;
 											data={generatePerformanceData(false)}
 											margin={{
 												top: 20,
-												right: isMediumScreen ? 40 : 120,
+												right: isMediumScreen ? 60 : 125,
 												bottom: isMediumScreen ? 40 : 60,
 												left: isMediumScreen ? 10 : 20,
 											}}
@@ -839,13 +967,12 @@ ${roundsDescription}`;
 													return null;
 												}}
 											/>
-											{/* Generate a line for each competitor with hover highlight and end labels */}
+											{/* Generate a line for each competitor with hover highlight */}
 											{(() => {
 												const colors = DASHBOARD_COLOR_PALETTE;
 
 												const chartData = generatePerformanceData(false);
 												const visibleSet = getFilteredCompetitors(chartData);
-												const { lastIndexByName, dyByName } = getEndLabelMeta(chartData, visibleSet);
 
 												return data?.competitors?.map((competitor, index) => {
 													if (!competitor || !competitor.Name) return null;
@@ -869,35 +996,18 @@ ${roundsDescription}`;
 															activeDot={{ r: isHighlighted ? 7 : 5, strokeWidth: 2 }}
 															onMouseEnter={() => setHoveredSeries(name)}
 															onMouseLeave={() => setHoveredSeries(prev => (prev === name ? null : prev))}
-														>
-															<LabelList
-																content={(props) => {
-																	const { x, y, index } = props;
-																	if (index !== lastIndexByName[name]) return null;
-																	const dy = dyByName[name] || 0;
-																	const color = colors[colorIndex];
-																	const text = name;
-																	return (
-																		<g>
-																			<text
-																				x={(x || 0) + 6}
-																				y={(y || 0) + dy}
-																				fontSize={12}
-																				fill={color}
-																				stroke="#fff"
-																				strokeWidth={3}
-																				paintOrder="stroke"
-																			>
-																				{text}
-																			</text>
-																		</g>
-																	);
-																}}
-															/>
-														</Line>
+														/>
 													);
 												}).filter(Boolean);
 											})()}
+											<Customized
+												component={PerformanceEndLabels}
+												hoveredSeries={hoveredSeries}
+												highlightName={highlightName}
+												setHoveredSeries={setHoveredSeries}
+												setHighlightName={setHighlightName}
+												isMediumScreen={isMediumScreen}
+											/>
 										</LineChart>
 									</ResponsiveContainer>
 								</Box>
@@ -914,7 +1024,7 @@ ${roundsDescription}`;
 											data={generatePerformanceData(true)}
 											margin={{
 												top: 20,
-												right: isMediumScreen ? 40 : 120,
+												right: isMediumScreen ? 60 : 125,
 												bottom: isMediumScreen ? 40 : 60,
 												left: isMediumScreen ? 10 : 20,
 											}}
@@ -1013,13 +1123,12 @@ ${roundsDescription}`;
 													return null;
 												}}
 											/>
-											{/* Generate a line for each competitor with hover/click highlight and end labels */}
+											{/* Generate a line for each competitor with hover/click highlight */}
 											{(() => {
 												const colors = DASHBOARD_COLOR_PALETTE;
 
 												const chartData = generatePerformanceData(true);
 												const visibleSet = getFilteredCompetitors(chartData);
-												const { lastIndexByName, dyByName } = getEndLabelMeta(chartData, visibleSet);
 
 												return data?.competitors?.map((competitor, index) => {
 													if (!competitor || !competitor.Name) return null;
@@ -1043,35 +1152,18 @@ ${roundsDescription}`;
 															activeDot={{ r: isHighlighted ? 7 : 5, strokeWidth: 2 }}
 															onMouseEnter={() => setHoveredSeries(name)}
 															onMouseLeave={() => setHoveredSeries(prev => (prev === name ? null : prev))}
-														>
-															<LabelList
-																content={(props) => {
-																	const { x, y, index } = props;
-																	if (index !== lastIndexByName[name]) return null;
-																	const dy = dyByName[name] || 0;
-																	const color = colors[colorIndex];
-																	const text = name;
-																	return (
-																		<g>
-																			<text
-																				x={(x || 0) + 6}
-																				y={(y || 0) + dy}
-																				fontSize={12}
-																				fill={color}
-																				stroke="#fff"
-																				strokeWidth={3}
-																				paintOrder="stroke"
-																			>
-																				{text}
-																			</text>
-																		</g>
-																	);
-																}}
-															/>
-														</Line>
+														/>
 													);
 												}).filter(Boolean);
 											})()}
+											<Customized
+												component={PerformanceEndLabels}
+												hoveredSeries={hoveredSeries}
+												highlightName={highlightName}
+												setHoveredSeries={setHoveredSeries}
+												setHighlightName={setHighlightName}
+												isMediumScreen={isMediumScreen}
+											/>
 										</LineChart>
 									</ResponsiveContainer>
 								</Box>
