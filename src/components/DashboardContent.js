@@ -1463,12 +1463,12 @@ const DashboardContent = ({
 									tiedWinners={superlatives?.similarity?.mostSimilar?.tiedWinners}
 									tiedDetails={superlatives?.similarity?.mostSimilar?.isTied ?
 										superlatives?.similarity?.mostSimilar?.tiedPairs?.map(pair =>
-											`Similarity Score: ${pair.score}
+											`Similarity Score: ${pair.score ?? (pair.similarity?.toFixed ? pair.similarity.toFixed(2) : pair.similarity) ?? 'N/A'}
 								Average Difference: ${pair.avgDiff ?? 'N/A'} votes
 								Common Songs Voted On: ${pair.votesCompared ?? 'N/A'}`
 										) ||
 										superlatives?.similarity?.mostSimilar?.tiedWinners?.map(
-											name => `Similarity Score: ${superlatives?.similarity?.mostSimilar?.score}`
+											name => `Similarity Score: ${superlatives?.similarity?.mostSimilar?.score ?? 'N/A'}`
 										) : null
 									}
 									calculationKey="mostSimilar"
@@ -1495,12 +1495,12 @@ const DashboardContent = ({
 									tiedWinners={superlatives?.similarity?.leastSimilar?.tiedWinners}
 									tiedDetails={superlatives?.similarity?.leastSimilar?.isTied ?
 										superlatives?.similarity?.leastSimilar?.tiedPairs?.map(pair =>
-											`Similarity Score: ${pair.score}
+											`Similarity Score: ${pair.score ?? (pair.similarity?.toFixed ? pair.similarity.toFixed(2) : pair.similarity) ?? 'N/A'}
 								Average Difference: ${pair.avgDiff ?? 'N/A'} votes
 								Common Songs Voted On: ${pair.votesCompared ?? 'N/A'}`
 										) ||
 										superlatives?.similarity?.leastSimilar?.tiedWinners?.map(
-											name => `Similarity Score: ${superlatives?.similarity?.leastSimilar?.score}`
+											name => `Similarity Score: ${superlatives?.similarity?.leastSimilar?.score ?? 'N/A'}`
 										) : null
 									}
 									calculationKey="leastSimilar"

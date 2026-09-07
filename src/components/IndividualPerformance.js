@@ -564,7 +564,7 @@ const IndividualPerformance = ({ data, season }) => {
 											{individualStats.mostCompatible?.Name || 'N/A'}
 										</Typography>
 										<Typography variant="body2" color="text.secondary" sx={{ textAlign: 'center' }}>
-											Based on average points exchanged
+											Based on average votes exchanged
 										</Typography>
 									</Box>
 								</CardContent>

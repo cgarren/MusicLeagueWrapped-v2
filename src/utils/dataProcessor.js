@@ -919,6 +919,7 @@ export const calculateVotingSimilarity = (votes, submissions, competitors) => {
 				competitor1: competitorA,
 				competitor2: competitorB,
 				similarity,
+				score: similarity.toFixed(2),
 				votesCompared: submissionCount,
 				roundsCompared,
 				avgDiff: avgDiff.toFixed(2),
@@ -960,11 +961,9 @@ export const calculateVotingSimilarity = (votes, submissions, competitors) => {
 	// Sort for most similar (descending)
 	const sortedBySimilarity = [...similarityScores].sort((a, b) => b.similarity - a.similarity);
 
-	// Check for ties in most similar (multiple pairs with the same highest similarity)
-	const highestSimilarity = sortedBySimilarity[0]?.similarity;
-	const tiedMostSimilar = sortedBySimilarity.filter(item =>
-		Math.abs(item.similarity - highestSimilarity) < 0.01
-	);
+	// Check for ties in most similar (multiple pairs with the same highest score)
+	const highestScore = sortedBySimilarity[0]?.score;
+	const tiedMostSimilar = sortedBySimilarity.filter(item => item.score === highestScore);
 	const isMostSimilarTied = tiedMostSimilar.length > 1;
 
 	// The most similar pair is the first item in the sorted array
@@ -977,23 +976,21 @@ export const calculateVotingSimilarity = (votes, submissions, competitors) => {
 
 	// Rest of the field for most similar (excluding the tied pairs if there's a tie)
 	const mostSimilarRestOfField = isMostSimilarTied
-		? sortedBySimilarity.filter(item => Math.abs(item.similarity - highestSimilarity) >= 0.01).slice(0, 8).map(item => ({
+		? sortedBySimilarity.filter(item => item.score !== highestScore).slice(0, 8).map(item => ({
 			name: `${item.competitor1.Name} & ${item.competitor2.Name}`,
-			score: `Similarity: ${item.similarity.toFixed(2)}`
+			score: `Similarity: ${item.score}`
 		}))
 		: sortedBySimilarity.slice(1, 9).map(item => ({
 			name: `${item.competitor1.Name} & ${item.competitor2.Name}`,
-			score: `Similarity: ${item.similarity.toFixed(2)}`
+			score: `Similarity: ${item.score}`
 		}));
 
 	// Sort for least similar (ascending)
 	const sortedByDissimilarity = [...similarityScores].sort((a, b) => a.similarity - b.similarity);
 
-	// Check for ties in least similar (multiple pairs with the same lowest similarity)
-	const lowestSimilarity = sortedByDissimilarity[0]?.similarity;
-	const tiedLeastSimilar = sortedByDissimilarity.filter(item =>
-		Math.abs(item.similarity - lowestSimilarity) < 0.01
-	);
+	// Check for ties in least similar (multiple pairs with the same lowest score)
+	const lowestScore = sortedByDissimilarity[0]?.score;
+	const tiedLeastSimilar = sortedByDissimilarity.filter(item => item.score === lowestScore);
 	const isLeastSimilarTied = tiedLeastSimilar.length > 1;
 
 	// The least similar pair is the first item in the sorted array
@@ -1006,13 +1003,13 @@ export const calculateVotingSimilarity = (votes, submissions, competitors) => {
 
 	// Rest of the field for least similar (excluding the tied pairs if there's a tie)
 	const leastSimilarRestOfField = isLeastSimilarTied
-		? sortedByDissimilarity.filter(item => Math.abs(item.similarity - lowestSimilarity) >= 0.01).slice(0, 8).map(item => ({
+		? sortedByDissimilarity.filter(item => item.score !== lowestScore).slice(0, 8).map(item => ({
 			name: `${item.competitor1.Name} & ${item.competitor2.Name}`,
-			score: `Similarity: ${item.similarity.toFixed(2)}`
+			score: `Similarity: ${item.score}`
 		}))
 		: sortedByDissimilarity.slice(1, 9).map(item => ({
 			name: `${item.competitor1.Name} & ${item.competitor2.Name}`,
-			score: `Similarity: ${item.similarity.toFixed(2)}`
+			score: `Similarity: ${item.score}`
 		}));
 
 	return {
@@ -1025,7 +1022,10 @@ export const calculateVotingSimilarity = (votes, submissions, competitors) => {
 			restOfField: mostSimilarRestOfField,
 			isTied: isMostSimilarTied,
 			tiedWinners: tiedMostSimilarNames,
-			tiedPairs: isMostSimilarTied ? tiedMostSimilar : null
+			tiedPairs: isMostSimilarTied ? tiedMostSimilar.map(item => ({
+				...item,
+				score: (item.similarity ?? item.score)?.toFixed ? item.similarity.toFixed(2) : String(item.score ?? item.similarity)
+			})) : null
 		},
 		leastSimilar: {
 			competitor1: leastSimilar.competitor1,
@@ -1036,7 +1036,10 @@ export const calculateVotingSimilarity = (votes, submissions, competitors) => {
 			restOfField: leastSimilarRestOfField,
 			isTied: isLeastSimilarTied,
 			tiedWinners: tiedLeastSimilarNames,
-			tiedPairs: isLeastSimilarTied ? tiedLeastSimilar : null
+			tiedPairs: isLeastSimilarTied ? tiedLeastSimilar.map(item => ({
+				...item,
+				score: (item.similarity ?? item.score)?.toFixed ? item.similarity.toFixed(2) : String(item.score ?? item.similarity)
+			})) : null
 		}
 	};
 };
