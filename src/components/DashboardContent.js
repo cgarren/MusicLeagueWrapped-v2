@@ -809,7 +809,7 @@ ${roundsDescription}`;
 								📈 Performance Over Time
 							</Typography>
 							<Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
-								Track how each competitor's performance evolved throughout the season. Switch between round-by-round votes and cumulative totals.
+								Track how each competitor's performance evolved throughout the season. Switch between round-by-round votes and cumulative totals. The competitor labels on the right are clickable to highlight individual lines.
 							</Typography>
 
 							{/* Chart Tabs */}
