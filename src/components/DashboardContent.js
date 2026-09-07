@@ -379,11 +379,7 @@ const DashboardContent = ({
 		const timingPercent = (entry.avgPosition !== undefined && entry.avgPosition !== null) ? parseInt(entry.avgPosition) : null;
 		let timingDescription = 'N/A';
 		if (timingPercent !== null) {
-			if (timingPercent <= 50) {
-				timingDescription = `In the first ${timingPercent}% of submitters, on average`;
-			} else {
-				timingDescription = `In the last ${100 - timingPercent}% of submitters, on average`;
-			}
+			timingDescription = `Around the ${timingPercent}% mark of round submissions, on average`;
 		}
 
 		const performancePercent = (entry.avgPerformance !== undefined && entry.avgPerformance !== null) ? parseInt(entry.avgPerformance) : null;
@@ -1392,7 +1388,8 @@ ${roundsDescription}`;
 									justifyContent: 'center'
 								}}>
 									{timingCompetitorNames.map((name, idx) => {
-										const colorIndex = data?.competitors?.findIndex(c => c.Name === name) ?? idx;
+										const foundIdx = data?.competitors?.findIndex(c => c.Name === name);
+										const colorIndex = (foundIdx !== undefined && foundIdx >= 0) ? foundIdx : idx;
 										const colors = DASHBOARD_COLOR_PALETTE;
 										const color = colors[colorIndex % colors.length];
 										return (
@@ -2171,7 +2168,8 @@ ${roundsDescription}`;
 											const competitorName = entry.dataKey;
 											const submission = roundSubmissions[competitorName];
 											const colors = DASHBOARD_COLOR_PALETTE;
-											const competitorIndex = data.competitors?.findIndex(c => c.Name === competitorName) || 0;
+											const foundIdx = data.competitors?.findIndex(c => c.Name === competitorName);
+											const competitorIndex = (foundIdx !== undefined && foundIdx >= 0) ? foundIdx : 0;
 											const color = colors[competitorIndex % colors.length];
 
 											return (
