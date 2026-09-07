@@ -809,7 +809,7 @@ ${roundsDescription}`;
 								📈 Performance Over Time
 							</Typography>
 							<Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
-								Track how each competitor's performance evolved throughout the season. Switch between round-by-round votes and cumulative totals. The competitor labels on the right are clickable to highlight individual lines.
+								Track how each competitor's performance evolved throughout the season. Switch between round-by-round votes and cumulative totals.
 							</Typography>
 
 							{/* Chart Tabs */}
@@ -1182,6 +1182,10 @@ ${roundsDescription}`;
 										'Shows cumulative vote totals over time. Lines continue smoothly even when competitors miss rounds.' :
 										'Shows cumulative vote totals accumulated over time. Lines continue smoothly even when competitors miss rounds, showing their running total.'
 									)
+								}{' '}
+								{isMediumScreen ?
+									'Tap competitor labels on the right to highlight individual lines.' :
+									'Click competitor labels on the right to highlight individual lines.'
 								}
 							</Typography>
 
